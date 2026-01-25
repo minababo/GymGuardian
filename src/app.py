@@ -30,7 +30,7 @@ def main() -> None:
                 break
 
             results = detector.process(frame)
-            squat_state = analyzer.classify(results.pose_landmarks)
+            squat_state = analyzer.classify(results)
             overlay.draw(frame, results, squat_state)
 
             cv2.imshow("GymGuardian", frame)
