@@ -1,62 +1,63 @@
-# GymGuardian 🏋️‍♂️🤖
+# GymGuardian
 
-**AI-powered workout form correction and feedback system**
+AI-powered exercise form analysis and feedback system using computer vision.
 
-## 📌 Problem Statement
+## Problem Statement
 
-Many people exercise without access to personal trainers, leading to poor form, increased risk of injury, and reduced efficiency. Existing AI-based solutions only classify reps as correct/incorrect without explaining _why_ or suggesting _how to improve_.
+Many individuals perform exercises without access to professional coaching, leading to incorrect form, increased injury risk, and reduced training effectiveness. While AI-based fitness tools exist, many provide only basic rep counting or binary correctness feedback without meaningful insight into movement quality.
 
-## 🎯 Goal
+## Project Aim
 
-GymGuardian acts as a **virtual coach** that:
+GymGuardian aims to provide real-time exercise form analysis using pose estimation techniques. The system focuses on identifying posture states and movement patterns during exercises, enabling basic feedback and session-level analysis suitable for a prototype-level academic project.
 
-- Detects exercise reps using computer vision (MediaPipe + OpenCV).
-- Identifies **joint-level errors** (e.g., knee collapsing, back rounding).
-- Provides **highlighted replays** of faulty reps.
-- Suggests **corrective micro-drills** for improvement.
+## Key Features
 
-## ✨ Key Features
+- Real-time pose detection using MediaPipe and OpenCV
+- Live webcam feed with skeletal overlay
+- Exercise state classification (e.g., squat phases)
+- Session recording and summary output
+- Configurable thresholds for posture analysis
+- Modular structure for extending to additional exercises
 
-- Real-time pose estimation using MediaPipe.
-- Rep segmentation and per-rep error analysis.
-- Joint-level blame localization.
-- Replay of bad reps with visual highlights.
-- Personalized corrective drill suggestions.
-- Expandable for new exercises.
-
-## 🏗️ Tech Stack
+## Technology Stack
 
 - **Language**: Python 3.x
-- **Core Libraries**: MediaPipe, OpenCV, NumPy, scikit-learn (optional ML)
-- **Architecture**: MVC (Models, Views, Controllers)
-- **Deployment**: Flask or React (planned)
-- **Version Control**: Git + GitHub
+- **Computer Vision**: MediaPipe, OpenCV
+- **Numerical Processing**: NumPy
+- **Architecture**: Modular Python application
+- **Version Control**: Git and GitHub
 
-## 📂 Project Structure
+## Project Structure
 
+```
 GymGuardian/
 ├── src/
-│ ├── models/ # AI + angle calculation logic
-│ ├── views/ # UI layer
-│ ├── controllers/ # connects input → models → output
-│ ├── utils/ # helper scripts
-│ └── init.py
-├── models/ # saved ML models
-├── data/ # sample videos/images
-├── docs/ # reports, notes
-├── tests/ # test scripts
-├── requirements.txt # dependencies
+│ ├── analysis/ # exercise state and form analysis
+│ ├── pose/ # pose detection logic
+│ ├── session/ # session recording and summaries
+│ ├── ui/ # visual overlays and display
+│ ├── core/ # configuration and shared utilities
+│ └── app.py # application entry point
+├── assets/
+│ └── models/ # pose models (ignored from version control)
+├── requirements.txt
 ├── .gitignore
 └── README.md
+```
 
-## 🚀 Setup & Installation
+## Setup & Installation
 
-To get a local copy up and running, follow these steps.
+### Prerequisites
+
+- Python 3.9 or later
+- Webcam
+
+### Installation Steps
 
 1.  **Clone the Repository**
 
     ```bash
-    git clone [https://github.com/minababo/GymGuardian.git](https://github.com/minababo/GymGuardian.git)
+    git clone https://github.com/minababo/GymGuardian.git
     cd GymGuardian
     ```
 
@@ -76,7 +77,17 @@ To get a local copy up and running, follow these steps.
     pip install -r requirements.txt
     ```
 
-4.  **Run the Application** (Instructions to be added)
+4.  **Run the Application**
     ```bash
-    python src/main.py
+    python src/app.py
     ```
+
+Press q or Esc to exit the application window.
+
+## Project Status
+
+This project is developed as part of the PUSL3190 Computing Project module and represents a prototype-level implementation aligned with academic assessment requirements.
+
+## License
+
+This project is intended for academic use.
