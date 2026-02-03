@@ -8,6 +8,7 @@ import time
 import cv2
 
 from analysis.squat import SquatRepCounter, SquatStateAnalyzer
+from core.paths import SESSIONS_DIR
 from pose.detector import PoseDetector
 from session.summary import SessionSummary
 from ui.overlay import OverlayRenderer
@@ -28,6 +29,7 @@ def main() -> None:
     rep_counter = SquatRepCounter()
     overlay = OverlayRenderer()
     summary = SessionSummary(started_at=datetime.now())
+    session_dir = SESSIONS_DIR / summary.started_at.strftime("%Y%m%d_%H%M%S")
     start_time = time.time()
 
     try:
@@ -57,9 +59,14 @@ def main() -> None:
             if key in (27, ord("q")):
                 break
     finally:
+        summary.rep_count = rep_counter.rep_count
+        summary.bad_rep_count = rep_counter.bad_rep_count
+        saved_path = summary.save(session_dir)
+
         detector.close()
         cap.release()
         cv2.destroyAllWindows()
+        print(f"Session summary saved: {saved_path}")
 
 
 if __name__ == "__main__":
