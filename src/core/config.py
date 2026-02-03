@@ -17,6 +17,9 @@ class PoseConfig:
 class SquatConfig:
     down_knee_angle: float = 100.0
     up_knee_angle: float = 160.0
+    shallow_knee_angle: float = 110.0
+    down_hold_frames: int = 6
+    min_rep_seconds: float = 0.6
 
 
 POSE_CONFIG = PoseConfig()
