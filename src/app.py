@@ -9,6 +9,7 @@ import cv2
 import numpy as np
 
 from analysis.squat import SquatRepCounter, SquatStateAnalyzer
+from core.config import SQUAT_CONFIG
 from core.paths import SESSIONS_DIR
 from pose.detector import PoseDetector
 from session.browser import (
@@ -55,6 +56,9 @@ def run_session(overlay: OverlayRenderer) -> None:
     recorder = SessionRecorder(session_dir)
     recorder_started = False
     start_time = time.time()
+    debug_enabled = False
+    fps_estimate = 0.0
+    previous_frame_time = 0.0
 
     try:
         while True:
@@ -69,6 +73,13 @@ def run_session(overlay: OverlayRenderer) -> None:
                 recorder_started = True
 
             timestamp = time.time()
+            if previous_frame_time > 0:
+                delta = timestamp - previous_frame_time
+                if delta > 0:
+                    instant_fps = 1.0 / delta
+                    fps_estimate = instant_fps if fps_estimate == 0 else (0.9 * fps_estimate + 0.1 * instant_fps)
+            previous_frame_time = timestamp
+
             results = detector.process(frame)
             squat_state = analyzer.classify(results)
             rep_update = rep_counter.update(squat_state, timestamp)
@@ -83,12 +94,31 @@ def run_session(overlay: OverlayRenderer) -> None:
             summary.bad_rep_count = rep_counter.bad_rep_count
 
             overlay.draw(frame, results, squat_state, rep_counter)
+            if debug_enabled:
+                pose_detected = bool(
+                    results
+                    and getattr(results, "pose_landmarks", None)
+                    and len(results.pose_landmarks) > 0
+                )
+                debug_info = {
+                    "fps": fps_estimate,
+                    "pose_detected": pose_detected,
+                    "knee_angle": squat_state.knee_angle,
+                    "down_knee_angle": SQUAT_CONFIG.down_knee_angle,
+                    "up_knee_angle": SQUAT_CONFIG.up_knee_angle,
+                    "shallow_knee_angle": SQUAT_CONFIG.shallow_knee_angle,
+                    "down_hold_frames": SQUAT_CONFIG.down_hold_frames,
+                    "min_rep_seconds": SQUAT_CONFIG.min_rep_seconds,
+                }
+                overlay.draw_debug(frame, debug_info)
             recorder.write(frame)
 
             cv2.imshow(WINDOW_NAME, frame)
             key = cv2.waitKey(1) & 0xFF
             if key in (27, ord("q")):
                 break
+            if key in (ord("d"), ord("D")):
+                debug_enabled = not debug_enabled
     finally:
         summary.rep_count = rep_counter.rep_count
         summary.bad_rep_count = rep_counter.bad_rep_count
