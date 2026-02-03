@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
+import json
+from pathlib import Path
 from typing import List
 
 
@@ -44,3 +46,10 @@ class SessionSummary:
                 for event in self.events
             ],
         }
+
+    def save(self, output_dir: Path) -> Path:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir / "summary.json"
+        with output_path.open("w", encoding="utf-8") as file:
+            json.dump(self.to_dict(), file, indent=2)
+        return output_path
