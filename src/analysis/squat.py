@@ -1,4 +1,4 @@
-"""Basic squat state classification for MVP (Tasks Pose Landmarker result)."""
+"""Squat state classification and rep counting for MVP (Tasks Pose Landmarker result)."""
 
 from __future__ import annotations
 
@@ -88,3 +88,77 @@ def _angle_degrees(a, b, c) -> float:
 
     cos_angle = max(-1.0, min(1.0, dot / (mag_ba * mag_bc)))
     return math.degrees(math.acos(cos_angle))
+
+
+@dataclass(frozen=True)
+class RepCounterUpdate:
+    rep_started: bool = False
+    rep_completed: bool = False
+    is_bad: bool = False
+    reason: str = ""
+    min_knee_angle: Optional[float] = None
+
+
+class SquatRepCounter:
+    """Track squat reps and basic form errors (e.g., too shallow)."""
+
+    def __init__(self) -> None:
+        self.rep_count = 0
+        self.bad_rep_count = 0
+        self.last_rep_result = "none"
+        self._down_frames = 0
+        self._in_rep = False
+        self._rep_start_time = 0.0
+        self._min_knee_angle: Optional[float] = None
+
+    def update(self, squat_state: SquatState, timestamp: float) -> RepCounterUpdate:
+        if squat_state.label == "no_pose":
+            self._down_frames = 0
+            return RepCounterUpdate()
+
+        if squat_state.label == "down":
+            self._down_frames += 1
+            if squat_state.knee_angle is not None:
+                if self._min_knee_angle is None:
+                    self._min_knee_angle = squat_state.knee_angle
+                else:
+                    self._min_knee_angle = min(
+                        self._min_knee_angle, squat_state.knee_angle
+                    )
+
+            if not self._in_rep and self._down_frames >= SQUAT_CONFIG.down_hold_frames:
+                self._in_rep = True
+                self._rep_start_time = timestamp
+                return RepCounterUpdate(
+                    rep_started=True,
+                    min_knee_angle=self._min_knee_angle,
+                )
+        else:
+            self._down_frames = 0
+
+        if self._in_rep and squat_state.label == "standing":
+            if timestamp - self._rep_start_time >= SQUAT_CONFIG.min_rep_seconds:
+                min_angle = self._min_knee_angle
+                is_bad = (
+                    min_angle is None
+                    or min_angle > SQUAT_CONFIG.shallow_knee_angle
+                )
+                reason = "too_shallow" if is_bad else ""
+
+                self.rep_count += 1
+                if is_bad:
+                    self.bad_rep_count += 1
+
+                self.last_rep_result = "too_shallow" if is_bad else "ok"
+
+                self._in_rep = False
+                self._min_knee_angle = None
+
+                return RepCounterUpdate(
+                    rep_completed=True,
+                    is_bad=is_bad,
+                    reason=reason,
+                    min_knee_angle=min_angle,
+                )
+
+        return RepCounterUpdate()
