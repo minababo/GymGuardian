@@ -1,39 +1,45 @@
-"""Session recording placeholder for MVP."""
+"""Session video recorder for GymGuardian."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
 import cv2
 
 
-@dataclass
 class SessionRecorder:
-    """Minimal recorder stub for later session video capture."""
+    """Record webcam session frames to an MP4 file."""
 
-    output_dir: Path
-    fps: float
-    frame_size: tuple[int, int]
+    def __init__(self, output_dir: Path) -> None:
+        self.output_dir = output_dir
+        self.output_path = output_dir / "session.mp4"
+        self._writer: Optional[cv2.VideoWriter] = None
+        self.enabled = False
 
-    _writer: Optional[cv2.VideoWriter] = None
-
-    def start(self, filename: str) -> None:
+    def start(self, frame_size: tuple[int, int], fps: float) -> None:
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = self.output_dir / filename
-        self._writer = cv2.VideoWriter(
-            str(output_path),
+        safe_fps = fps if fps and fps > 1 else 30.0
+        writer = cv2.VideoWriter(
+            str(self.output_path),
             cv2.VideoWriter_fourcc(*"mp4v"),
-            self.fps,
-            self.frame_size,
+            safe_fps,
+            frame_size,
         )
+        if not writer.isOpened():
+            self.enabled = False
+            print("Warning: failed to initialize session video writer. Continuing without recording.")
+            return
+
+        self._writer = writer
+        self.enabled = True
 
     def write(self, frame) -> None:
-        if self._writer:
+        if self.enabled and self._writer is not None:
             self._writer.write(frame)
 
     def stop(self) -> None:
-        if self._writer:
+        if self._writer is not None:
             self._writer.release()
             self._writer = None
+        self.enabled = False

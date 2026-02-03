@@ -10,6 +10,7 @@ import cv2
 from analysis.squat import SquatRepCounter, SquatStateAnalyzer
 from core.paths import SESSIONS_DIR
 from pose.detector import PoseDetector
+from session.recorder import SessionRecorder
 from session.summary import SessionSummary
 from ui.overlay import OverlayRenderer
 
@@ -30,6 +31,8 @@ def main() -> None:
     overlay = OverlayRenderer()
     summary = SessionSummary(started_at=datetime.now())
     session_dir = SESSIONS_DIR / summary.started_at.strftime("%Y%m%d_%H%M%S")
+    recorder = SessionRecorder(session_dir)
+    recorder_started = False
     start_time = time.time()
 
     try:
@@ -37,6 +40,12 @@ def main() -> None:
             ok, frame = cap.read()
             if not ok:
                 break
+
+            if not recorder_started:
+                frame_size = (frame.shape[1], frame.shape[0])
+                capture_fps = cap.get(cv2.CAP_PROP_FPS)
+                recorder.start(frame_size=frame_size, fps=capture_fps)
+                recorder_started = True
 
             timestamp = time.time()
             results = detector.process(frame)
@@ -53,6 +62,7 @@ def main() -> None:
             summary.bad_rep_count = rep_counter.bad_rep_count
 
             overlay.draw(frame, results, squat_state, rep_counter)
+            recorder.write(frame)
 
             cv2.imshow("GymGuardian", frame)
             key = cv2.waitKey(1) & 0xFF
@@ -62,11 +72,14 @@ def main() -> None:
         summary.rep_count = rep_counter.rep_count
         summary.bad_rep_count = rep_counter.bad_rep_count
         saved_path = summary.save(session_dir)
+        recorder.stop()
 
         detector.close()
         cap.release()
         cv2.destroyAllWindows()
         print(f"Session summary saved: {saved_path}")
+        if recorder_started and recorder.output_path.exists():
+            print(f"Session video path: {recorder.output_path}")
 
 
 if __name__ == "__main__":
