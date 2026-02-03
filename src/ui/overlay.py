@@ -96,6 +96,63 @@ class OverlayRenderer:
             )
             row_y += 36
 
+    def draw_debug(self, frame_bgr, debug_info: dict) -> None:
+        lines = [
+            "DEBUG (D to toggle)",
+            f"FPS: {debug_info.get('fps', 0.0):.1f}",
+            f"Pose detected: {'yes' if debug_info.get('pose_detected') else 'no'}",
+        ]
+
+        knee_angle = debug_info.get("knee_angle")
+        if knee_angle is None:
+            lines.append("Knee angle: n/a")
+        else:
+            lines.append(f"Knee angle: {knee_angle:.1f}")
+
+        lines.extend(
+            [
+                f"down_knee_angle: {debug_info.get('down_knee_angle')}",
+                f"up_knee_angle: {debug_info.get('up_knee_angle')}",
+                f"shallow_knee_angle: {debug_info.get('shallow_knee_angle')}",
+                f"down_hold_frames: {debug_info.get('down_hold_frames')}",
+                f"min_rep_seconds: {debug_info.get('min_rep_seconds')}",
+            ]
+        )
+
+        panel_x = 20
+        panel_y = 110
+        line_height = 24
+        panel_w = 440
+        panel_h = 20 + line_height * len(lines)
+        cv2.rectangle(
+            frame_bgr,
+            (panel_x, panel_y),
+            (panel_x + panel_w, panel_y + panel_h),
+            (20, 20, 20),
+            -1,
+        )
+        cv2.rectangle(
+            frame_bgr,
+            (panel_x, panel_y),
+            (panel_x + panel_w, panel_y + panel_h),
+            (0, 180, 255),
+            2,
+        )
+
+        y = panel_y + 24
+        for line in lines:
+            cv2.putText(
+                frame_bgr,
+                line,
+                (panel_x + 10, y),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                (235, 235, 235),
+                1,
+                cv2.LINE_AA,
+            )
+            y += line_height
+
     def _put_heading(self, frame_bgr, text: str) -> None:
         cv2.putText(
             frame_bgr,
