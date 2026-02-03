@@ -27,3 +27,5 @@ models/*.onnx
 data/*.mp4
 data/*.avi
 assets/models/*.task
+
+sessions/
