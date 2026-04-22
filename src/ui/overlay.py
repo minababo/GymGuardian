@@ -6,6 +6,24 @@ import cv2
 
 
 class OverlayRenderer:
+    """Draw consistent OpenCV UI overlays without changing app behavior."""
+
+    FONT = cv2.FONT_HERSHEY_DUPLEX
+
+    BG = (15, 15, 15)
+    BG_SOFT = (22, 22, 22)
+    PANEL = (28, 28, 28)
+    PANEL_ALT = (36, 36, 36)
+    BORDER = (62, 62, 62)
+    BORDER_ACTIVE = (86, 170, 110)
+
+    PRIMARY = (92, 220, 132)
+    WARNING = (0, 165, 255)
+    ERROR = (68, 86, 235)
+    TEXT = (232, 232, 232)
+    MUTED = (166, 166, 166)
+    SHADOW = (0, 0, 0)
+
     def draw(
         self,
         frame_bgr,
@@ -15,101 +33,234 @@ class OverlayRenderer:
         feedback_message: str | None = None,
         feedback_level: str = "info",
     ) -> None:
-        # results.pose_landmarks is a list (per detected pose), each is list of landmarks
-        if results and getattr(results, "pose_landmarks", None):
-            if len(results.pose_landmarks) > 0:
-                landmarks = results.pose_landmarks[0]
-                h, w = frame_bgr.shape[:2]
-
-                for lm in landmarks:
-                    x = int(lm.x * w)
-                    y = int(lm.y * h)
-                    cv2.circle(frame_bgr, (x, y), 3, (0, 255, 0), -1)
-
-        label = f"State: {squat_state.label}"
-        if squat_state.knee_angle is not None:
-            label = f"{label} | knee: {squat_state.knee_angle:.1f}"
-
-        cv2.putText(
-            frame_bgr,
-            label,
-            (20, 40),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            1.0,
-            (0, 255, 0),
-            2,
-            cv2.LINE_AA,
-        )
-
-        if rep_counter is not None:
-            rep_text = (
-                f"Reps: {rep_counter.rep_count} | "
-                f"Bad: {rep_counter.bad_rep_count} | "
-                f"Last: {rep_counter.last_rep_result}"
-            )
-            cv2.putText(
-                frame_bgr,
-                rep_text,
-                (20, 80),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.9,
-                (0, 255, 0),
-                2,
-                cv2.LINE_AA,
-            )
+        self._draw_pose_points(frame_bgr, results)
+        self._draw_session_panel(frame_bgr, squat_state, rep_counter)
 
         if feedback_message:
             self._draw_feedback(frame_bgr, feedback_message, feedback_level)
 
     def draw_dashboard(self, frame_bgr) -> None:
-        self._put_heading(frame_bgr, "GymGuardian Dashboard")
-        lines = [
-            "S - Start Session",
-            "B - Browse Sessions",
-            "Q / Esc - Quit",
+        self._fill_background(frame_bgr)
+        frame_h, frame_w = frame_bgr.shape[:2]
+        panel_w = min(780, frame_w - 140)
+        panel_h = 390
+        panel_x = (frame_w - panel_w) // 2
+        panel_y = max(70, (frame_h - panel_h) // 2)
+
+        self._draw_panel(
+            frame_bgr,
+            panel_x,
+            panel_y,
+            panel_w,
+            panel_h,
+            border_color=self.BORDER_ACTIVE,
+            alpha=0.94,
+        )
+        self._put_text(
+            frame_bgr,
+            "GymGuardian",
+            panel_x + 46,
+            panel_y + 82,
+            scale=1.55,
+            color=self.PRIMARY,
+            thickness=2,
+            max_width=panel_w - 92,
+        )
+        self._put_text(
+            frame_bgr,
+            "AI-based real-time posture correction for home workouts",
+            panel_x + 50,
+            panel_y + 126,
+            scale=0.66,
+            color=self.MUTED,
+            thickness=1,
+            max_width=panel_w - 100,
+        )
+
+        options = [
+            ("S", "Start squat session"),
+            ("B", "Browse saved sessions"),
+            ("Q", "Quit application"),
         ]
-        self._put_lines(frame_bgr, lines, start_y=170)
+        row_y = panel_y + 190
+        for key, label in options:
+            self._draw_menu_row(
+                frame_bgr,
+                panel_x + 48,
+                row_y,
+                panel_w - 96,
+                key,
+                label,
+            )
+            row_y += 64
+
+        self._put_text(
+            frame_bgr,
+            "Press the highlighted key to continue. Use D during a session for debug metrics.",
+            panel_x + 50,
+            panel_y + panel_h - 30,
+            scale=0.48,
+            color=self.MUTED,
+            thickness=1,
+            max_width=panel_w - 100,
+        )
 
     def draw_browser(self, frame_bgr, sessions, selected_index: int) -> None:
-        self._put_heading(frame_bgr, "Session Browser")
-        instructions = [
-            "Up/Down - Move selection",
-            "P - Play session.mp4",
-            "O - Open session folder",
-            "Backspace - Return to Dashboard",
-        ]
-        self._put_lines(frame_bgr, instructions, start_y=110, line_height=28, scale=0.7)
+        self._fill_background(frame_bgr)
+        frame_h, frame_w = frame_bgr.shape[:2]
+
+        margin = 36
+        self._put_text(
+            frame_bgr,
+            "Session Browser",
+            margin,
+            58,
+            scale=1.18,
+            color=self.PRIMARY,
+            thickness=2,
+        )
+        self._put_text(
+            frame_bgr,
+            "Up/Down: select    P: play video    O: open folder    Backspace: dashboard",
+            margin + 2,
+            96,
+            scale=0.58,
+            color=self.MUTED,
+            thickness=1,
+            max_width=frame_w - (margin * 2),
+        )
+
+        list_x = margin
+        list_y = 132
+        list_w = frame_w - (margin * 2)
+        list_h = frame_h - list_y - margin
+        reps_x = list_x + list_w - 230
+        bad_x = list_x + list_w - 125
+        timestamp_w = max(240, reps_x - list_x - 48)
+
+        self._draw_panel(
+            frame_bgr,
+            list_x,
+            list_y,
+            list_w,
+            list_h,
+            border_color=self.BORDER,
+            alpha=0.9,
+        )
 
         if not sessions:
-            self._put_lines(frame_bgr, ["No sessions found in /sessions"], start_y=260)
+            self._put_text(
+                frame_bgr,
+                "No saved sessions found in /sessions",
+                list_x + 28,
+                list_y + 74,
+                scale=0.72,
+                color=self.MUTED,
+                thickness=1,
+                max_width=list_w - 56,
+            )
             return
 
-        start = max(0, selected_index - 5)
-        end = min(len(sessions), start + 10)
-        row_y = 260
+        header_y = list_y + 42
+        self._put_text(
+            frame_bgr,
+            "Timestamp",
+            list_x + 28,
+            header_y,
+            scale=0.56,
+            color=self.MUTED,
+            thickness=1,
+        )
+        self._put_text(
+            frame_bgr,
+            "Reps",
+            reps_x,
+            header_y,
+            scale=0.56,
+            color=self.MUTED,
+            thickness=1,
+        )
+        self._put_text(
+            frame_bgr,
+            "Bad",
+            bad_x,
+            header_y,
+            scale=0.56,
+            color=self.MUTED,
+            thickness=1,
+        )
+        cv2.line(
+            frame_bgr,
+            (list_x + 22, list_y + 58),
+            (list_x + list_w - 22, list_y + 58),
+            self.BORDER,
+            1,
+        )
+
+        max_rows = max(1, (list_h - 84) // 46)
+        start = min(
+            max(0, selected_index - max_rows // 2),
+            max(0, len(sessions) - max_rows),
+        )
+        end = min(len(sessions), start + max_rows)
+        row_y = list_y + 94
+        row_h = 42
+
         for idx in range(start, end):
             item = sessions[idx]
             selected = idx == selected_index
-            prefix = ">" if selected else " "
             reps = "?" if item.rep_count is None else str(item.rep_count)
             bad = "?" if item.bad_rep_count is None else str(item.bad_rep_count)
-            text = f"{prefix} {item.folder_name} | reps: {reps} | bad: {bad}"
-            color = (0, 255, 255) if selected else (200, 200, 200)
-            cv2.putText(
+
+            if selected:
+                self._draw_panel(
+                    frame_bgr,
+                    list_x + 16,
+                    row_y - 29,
+                    list_w - 32,
+                    row_h,
+                    color=self.PANEL_ALT,
+                    border_color=self.BORDER_ACTIVE,
+                    alpha=0.96,
+                )
+
+            color = self.TEXT if selected else (205, 205, 205)
+            marker = ">" if selected else " "
+            self._put_text(
                 frame_bgr,
-                text,
-                (30, row_y),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.65,
-                color,
-                2,
-                cv2.LINE_AA,
+                f"{marker} {item.folder_name}",
+                list_x + 30,
+                row_y,
+                scale=0.66,
+                color=color,
+                thickness=1,
+                max_width=timestamp_w,
             )
-            row_y += 36
+            self._put_text(
+                frame_bgr,
+                reps,
+                reps_x,
+                row_y,
+                scale=0.66,
+                color=color,
+                thickness=1,
+                max_width=64,
+            )
+            self._put_text(
+                frame_bgr,
+                bad,
+                bad_x,
+                row_y,
+                scale=0.66,
+                color=self.ERROR if bad not in ("0", "?") else color,
+                thickness=1,
+                max_width=64,
+            )
+            row_y += 46
 
     def draw_debug(self, frame_bgr, debug_info: dict) -> None:
         lines = [
-            "DEBUG (D to toggle)",
+            "Debug (D to toggle)",
             f"FPS: {debug_info.get('fps', 0.0):.1f}",
             f"Pose detected: {'yes' if debug_info.get('pose_detected') else 'no'}",
         ]
@@ -132,117 +283,295 @@ class OverlayRenderer:
         )
 
         panel_x = 20
-        panel_y = 110
-        line_height = 24
-        panel_w = 440
-        panel_h = 20 + line_height * len(lines)
-        cv2.rectangle(
+        panel_y = 194
+        line_height = 26
+        panel_w = 460
+        panel_h = 24 + line_height * len(lines)
+        self._draw_panel(
             frame_bgr,
-            (panel_x, panel_y),
-            (panel_x + panel_w, panel_y + panel_h),
-            (20, 20, 20),
-            -1,
-        )
-        cv2.rectangle(
-            frame_bgr,
-            (panel_x, panel_y),
-            (panel_x + panel_w, panel_y + panel_h),
-            (0, 180, 255),
-            2,
+            panel_x,
+            panel_y,
+            panel_w,
+            panel_h,
+            border_color=self.WARNING,
+            alpha=0.86,
         )
 
-        y = panel_y + 24
+        y = panel_y + 28
         for line in lines:
-            cv2.putText(
+            self._put_text(
                 frame_bgr,
                 line,
-                (panel_x + 10, y),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.6,
-                (235, 235, 235),
-                1,
-                cv2.LINE_AA,
+                panel_x + 14,
+                y,
+                scale=0.54,
+                color=self.TEXT,
+                thickness=1,
+                max_width=panel_w - 28,
             )
             y += line_height
+
+    def _draw_pose_points(self, frame_bgr, results) -> None:
+        if not results or not getattr(results, "pose_landmarks", None):
+            return
+        if len(results.pose_landmarks) == 0:
+            return
+
+        landmarks = results.pose_landmarks[0]
+        h, w = frame_bgr.shape[:2]
+        for lm in landmarks:
+            x = int(lm.x * w)
+            y = int(lm.y * h)
+            cv2.circle(frame_bgr, (x, y), 3, self.PRIMARY, -1)
+
+    def _draw_session_panel(self, frame_bgr, squat_state, rep_counter=None) -> None:
+        panel_x = 20
+        panel_y = 20
+        panel_w = 470
+        panel_h = 158
+        pad = 18
+
+        self._draw_panel(
+            frame_bgr,
+            panel_x,
+            panel_y,
+            panel_w,
+            panel_h,
+            border_color=self.BORDER,
+            alpha=0.84,
+        )
+
+        state_text = squat_state.label.replace("_", " ").title()
+        self._put_text(
+            frame_bgr,
+            f"State: {state_text}",
+            panel_x + pad,
+            panel_y + 38,
+            scale=0.78,
+            color=self.PRIMARY,
+            thickness=1,
+            max_width=panel_w - (pad * 2),
+        )
+
+        if squat_state.knee_angle is None:
+            knee_text = "Knee angle: n/a"
+        else:
+            knee_text = f"Knee angle: {squat_state.knee_angle:.1f}"
+        self._put_text(
+            frame_bgr,
+            knee_text,
+            panel_x + pad,
+            panel_y + 72,
+            scale=0.64,
+            color=self.TEXT,
+            thickness=1,
+            max_width=panel_w - (pad * 2),
+        )
+
+        if rep_counter is None:
+            return
+
+        reps_y = panel_y + 112
+        self._put_text(
+            frame_bgr,
+            f"Reps: {rep_counter.rep_count}",
+            panel_x + pad,
+            reps_y,
+            scale=0.7,
+            color=self.TEXT,
+            thickness=1,
+            max_width=120,
+        )
+        self._put_text(
+            frame_bgr,
+            f"Bad: {rep_counter.bad_rep_count}",
+            panel_x + 150,
+            reps_y,
+            scale=0.7,
+            color=self.ERROR if rep_counter.bad_rep_count else self.TEXT,
+            thickness=1,
+            max_width=110,
+        )
+
+        last_text = self._format_result(rep_counter.last_rep_result)
+        self._put_text(
+            frame_bgr,
+            f"Last: {last_text}",
+            panel_x + pad,
+            panel_y + 144,
+            scale=0.56,
+            color=self.MUTED,
+            thickness=1,
+            max_width=panel_w - (pad * 2),
+        )
 
     def _draw_feedback(
         self, frame_bgr, message: str, feedback_level: str = "info"
     ) -> None:
         colors = {
-            "ok": (0, 220, 0),
-            "bad": (0, 0, 255),
-            "warning": (0, 210, 255),
-            "info": (235, 235, 235),
+            "ok": self.PRIMARY,
+            "bad": self.ERROR,
+            "warning": self.WARNING,
+            "info": self.TEXT,
         }
         color = colors.get(feedback_level, colors["info"])
-        font = cv2.FONT_HERSHEY_SIMPLEX
-        scale = 1.0
-        thickness = 2
-        text_size, _ = cv2.getTextSize(message, font, scale, thickness)
-        text_w, text_h = text_size
+        scale = 0.86
+        thickness = 1
         _, frame_w = frame_bgr.shape[:2]
-        pad_x = 16
-        pad_y = 12
-        panel_x = max(20, frame_w - text_w - (pad_x * 2) - 24)
-        panel_y = 24
-        panel_w = text_w + (pad_x * 2)
+        max_panel_w = min(430, frame_w - 540)
+        display_text = self._fit_text(message, max_panel_w - 36, scale, thickness)
+        text_size, _ = cv2.getTextSize(display_text, self.FONT, scale, thickness)
+        text_w, text_h = text_size
+        pad_x = 18
+        pad_y = 14
+        panel_w = max(240, text_w + (pad_x * 2))
         panel_h = text_h + (pad_y * 2)
+        panel_x = frame_w - panel_w - 24
+        panel_y = 24
 
-        cv2.rectangle(
+        self._draw_panel(
             frame_bgr,
-            (panel_x, panel_y),
-            (panel_x + panel_w, panel_y + panel_h),
-            (20, 20, 20),
-            -1,
+            panel_x,
+            panel_y,
+            panel_w,
+            panel_h,
+            border_color=color,
+            alpha=0.88,
         )
-        cv2.rectangle(
+        self._put_text(
             frame_bgr,
-            (panel_x, panel_y),
-            (panel_x + panel_w, panel_y + panel_h),
-            color,
-            2,
+            display_text,
+            panel_x + pad_x,
+            panel_y + pad_y + text_h,
+            scale=scale,
+            color=color,
+            thickness=thickness,
+            max_width=panel_w - (pad_x * 2),
+        )
+
+    def _draw_menu_row(
+        self, frame_bgr, x: int, y: int, width: int, key: str, label: str
+    ) -> None:
+        row_h = 48
+        self._draw_panel(
+            frame_bgr,
+            x,
+            y - 32,
+            width,
+            row_h,
+            color=self.PANEL_ALT,
+            border_color=self.BORDER,
+            alpha=0.94,
+        )
+        cv2.rectangle(frame_bgr, (x + 18, y - 24), (x + 54, y + 10), self.BG_SOFT, -1)
+        cv2.rectangle(frame_bgr, (x + 18, y - 24), (x + 54, y + 10), self.PRIMARY, 1)
+        self._put_text(
+            frame_bgr,
+            key,
+            x + 29,
+            y,
+            scale=0.66,
+            color=self.PRIMARY,
+            thickness=1,
+            max_width=24,
+        )
+        self._put_text(
+            frame_bgr,
+            label,
+            x + 76,
+            y,
+            scale=0.68,
+            color=self.TEXT,
+            thickness=1,
+            max_width=width - 96,
+        )
+
+    def _fill_background(self, frame_bgr) -> None:
+        frame_bgr[:] = self.BG
+        frame_h, frame_w = frame_bgr.shape[:2]
+        cv2.rectangle(frame_bgr, (0, 0), (frame_w, 112), self.BG_SOFT, -1)
+        cv2.line(frame_bgr, (0, 112), (frame_w, 112), self.BORDER, 1)
+        cv2.circle(frame_bgr, (frame_w - 100, 80), 150, (20, 32, 24), -1)
+        cv2.circle(frame_bgr, (70, frame_h - 70), 130, (24, 24, 24), -1)
+
+    def _draw_panel(
+        self,
+        frame_bgr,
+        x: int,
+        y: int,
+        width: int,
+        height: int,
+        color: tuple[int, int, int] = PANEL,
+        border_color: tuple[int, int, int] = BORDER,
+        alpha: float = 0.88,
+    ) -> None:
+        overlay = frame_bgr.copy()
+        cv2.rectangle(overlay, (x, y), (x + width, y + height), color, -1)
+        cv2.addWeighted(overlay, alpha, frame_bgr, 1 - alpha, 0, frame_bgr)
+        cv2.rectangle(frame_bgr, (x, y), (x + width, y + height), border_color, 1)
+
+    def _put_text(
+        self,
+        frame_bgr,
+        text: str,
+        x: int,
+        y: int,
+        scale: float,
+        color: tuple[int, int, int],
+        thickness: int = 1,
+        max_width: int | None = None,
+    ) -> None:
+        display_text = text
+        if max_width is not None:
+            display_text = self._fit_text(text, max_width, scale, thickness)
+
+        cv2.putText(
+            frame_bgr,
+            display_text,
+            (x + 1, y + 1),
+            self.FONT,
+            scale,
+            self.SHADOW,
+            thickness + 1,
+            cv2.LINE_AA,
         )
         cv2.putText(
             frame_bgr,
-            message,
-            (panel_x + pad_x, panel_y + pad_y + text_h),
-            font,
+            display_text,
+            (x, y),
+            self.FONT,
             scale,
             color,
             thickness,
             cv2.LINE_AA,
         )
 
-    def _put_heading(self, frame_bgr, text: str) -> None:
-        cv2.putText(
-            frame_bgr,
-            text,
-            (20, 50),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            1.1,
-            (0, 255, 0),
-            2,
-            cv2.LINE_AA,
-        )
+    def _fit_text(
+        self, text: str, max_width: int, scale: float, thickness: int
+    ) -> str:
+        if max_width <= 0:
+            return "..."
+        if self._text_width(text, scale, thickness) <= max_width:
+            return text
 
-    def _put_lines(
-        self,
-        frame_bgr,
-        lines: list[str],
-        start_y: int,
-        line_height: int = 34,
-        scale: float = 0.8,
-    ) -> None:
-        y = start_y
-        for line in lines:
-            cv2.putText(
-                frame_bgr,
-                line,
-                (30, y),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                scale,
-                (200, 200, 200),
-                2,
-                cv2.LINE_AA,
-            )
-            y += line_height
+        ellipsis = "..."
+        low = 0
+        high = len(text)
+        while low < high:
+            mid = (low + high + 1) // 2
+            candidate = text[:mid].rstrip() + ellipsis
+            if self._text_width(candidate, scale, thickness) <= max_width:
+                low = mid
+            else:
+                high = mid - 1
+        return text[:low].rstrip() + ellipsis
+
+    def _text_width(self, text: str, scale: float, thickness: int) -> int:
+        text_size, _ = cv2.getTextSize(text, self.FONT, scale, thickness)
+        return text_size[0]
+
+    @staticmethod
+    def _format_result(value: str) -> str:
+        if not value or value == "none":
+            return "none"
+        return value
