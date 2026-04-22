@@ -77,7 +77,11 @@ def run_session(overlay: OverlayRenderer) -> None:
                 delta = timestamp - previous_frame_time
                 if delta > 0:
                     instant_fps = 1.0 / delta
-                    fps_estimate = instant_fps if fps_estimate == 0 else (0.9 * fps_estimate + 0.1 * instant_fps)
+                    fps_estimate = (
+                        instant_fps
+                        if fps_estimate == 0
+                        else (0.9 * fps_estimate + 0.1 * instant_fps)
+                    )
             previous_frame_time = timestamp
 
             results = detector.process(frame)
@@ -106,6 +110,7 @@ def run_session(overlay: OverlayRenderer) -> None:
                     "knee_angle": squat_state.knee_angle,
                     "down_knee_angle": SQUAT_CONFIG.down_knee_angle,
                     "up_knee_angle": SQUAT_CONFIG.up_knee_angle,
+                    "rep_bottom_knee_angle": SQUAT_CONFIG.rep_bottom_knee_angle,
                     "shallow_knee_angle": SQUAT_CONFIG.shallow_knee_angle,
                     "down_hold_frames": SQUAT_CONFIG.down_hold_frames,
                     "min_rep_seconds": SQUAT_CONFIG.min_rep_seconds,

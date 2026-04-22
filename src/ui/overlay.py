@@ -113,6 +113,7 @@ class OverlayRenderer:
             [
                 f"down_knee_angle: {debug_info.get('down_knee_angle')}",
                 f"up_knee_angle: {debug_info.get('up_knee_angle')}",
+                f"rep_bottom_knee_angle: {debug_info.get('rep_bottom_knee_angle')}",
                 f"shallow_knee_angle: {debug_info.get('shallow_knee_angle')}",
                 f"down_hold_frames: {debug_info.get('down_hold_frames')}",
                 f"min_rep_seconds: {debug_info.get('min_rep_seconds')}",

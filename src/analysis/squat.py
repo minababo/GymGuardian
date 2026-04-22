@@ -100,33 +100,49 @@ class RepCounterUpdate:
 
 
 class SquatRepCounter:
-    """Track squat reps and basic form errors (e.g., too shallow)."""
+    """Track squat reps separately from depth quality checks."""
 
     def __init__(self) -> None:
         self.rep_count = 0
         self.bad_rep_count = 0
         self.last_rep_result = "none"
-        self._down_frames = 0
+        self._bottom_frames = 0
         self._in_rep = False
+        self._ready_for_rep = False
         self._rep_start_time = 0.0
         self._min_knee_angle: Optional[float] = None
 
     def update(self, squat_state: SquatState, timestamp: float) -> RepCounterUpdate:
         if squat_state.label == "no_pose":
-            self._down_frames = 0
+            self._bottom_frames = 0
             return RepCounterUpdate()
 
-        if squat_state.label == "down":
-            self._down_frames += 1
-            if squat_state.knee_angle is not None:
-                if self._min_knee_angle is None:
-                    self._min_knee_angle = squat_state.knee_angle
-                else:
-                    self._min_knee_angle = min(
-                        self._min_knee_angle, squat_state.knee_angle
-                    )
+        angle = squat_state.knee_angle
+        if angle is None:
+            self._bottom_frames = 0
+            return RepCounterUpdate()
 
-            if not self._in_rep and self._down_frames >= SQUAT_CONFIG.down_hold_frames:
+        if self._in_rep:
+            self._update_min_knee_angle(angle)
+            if timestamp - self._rep_start_time >= SQUAT_CONFIG.min_rep_seconds:
+                if angle >= SQUAT_CONFIG.up_knee_angle:
+                    return self._complete_rep()
+
+            return RepCounterUpdate()
+
+        if angle >= SQUAT_CONFIG.up_knee_angle:
+            self._ready_for_rep = True
+            self._bottom_frames = 0
+            self._min_knee_angle = None
+            return RepCounterUpdate()
+
+        if not self._ready_for_rep:
+            return RepCounterUpdate()
+
+        if angle <= SQUAT_CONFIG.rep_bottom_knee_angle:
+            self._bottom_frames += 1
+            self._update_min_knee_angle(angle)
+            if self._bottom_frames >= SQUAT_CONFIG.down_hold_frames:
                 self._in_rep = True
                 self._rep_start_time = timestamp
                 return RepCounterUpdate(
@@ -134,31 +150,35 @@ class SquatRepCounter:
                     min_knee_angle=self._min_knee_angle,
                 )
         else:
-            self._down_frames = 0
-
-        if self._in_rep and squat_state.label == "standing":
-            if timestamp - self._rep_start_time >= SQUAT_CONFIG.min_rep_seconds:
-                min_angle = self._min_knee_angle
-                is_bad = (
-                    min_angle is None
-                    or min_angle > SQUAT_CONFIG.shallow_knee_angle
-                )
-                reason = "too_shallow" if is_bad else ""
-
-                self.rep_count += 1
-                if is_bad:
-                    self.bad_rep_count += 1
-
-                self.last_rep_result = "too_shallow" if is_bad else "ok"
-
-                self._in_rep = False
-                self._min_knee_angle = None
-
-                return RepCounterUpdate(
-                    rep_completed=True,
-                    is_bad=is_bad,
-                    reason=reason,
-                    min_knee_angle=min_angle,
-                )
+            self._bottom_frames = 0
 
         return RepCounterUpdate()
+
+    def _update_min_knee_angle(self, angle: float) -> None:
+        if self._min_knee_angle is None:
+            self._min_knee_angle = angle
+        else:
+            self._min_knee_angle = min(self._min_knee_angle, angle)
+
+    def _complete_rep(self) -> RepCounterUpdate:
+        min_angle = self._min_knee_angle
+        is_bad = min_angle is None or min_angle > SQUAT_CONFIG.shallow_knee_angle
+        reason = "too_shallow" if is_bad else ""
+
+        self.rep_count += 1
+        if is_bad:
+            self.bad_rep_count += 1
+
+        self.last_rep_result = "too_shallow" if is_bad else "ok"
+        self._bottom_frames = 0
+        self._in_rep = False
+        self._ready_for_rep = True
+        self._rep_start_time = 0.0
+        self._min_knee_angle = None
+
+        return RepCounterUpdate(
+            rep_completed=True,
+            is_bad=is_bad,
+            reason=reason,
+            min_knee_angle=min_angle,
+        )
