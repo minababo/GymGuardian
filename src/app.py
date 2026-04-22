@@ -30,10 +30,31 @@ STATE_SESSION = "session"
 STATE_BROWSE = "browse"
 UP_KEY = 2490368
 DOWN_KEY = 2621440
+FEEDBACK_HOLD_SECONDS = 2.0
 
 
 def _blank_screen() -> np.ndarray:
     return np.zeros((FRAME_HEIGHT, FRAME_WIDTH, 3), dtype=np.uint8)
+
+
+def _current_feedback(
+    squat_state,
+    feedback_message: str | None,
+    feedback_level: str,
+    feedback_until: float,
+    timestamp: float,
+) -> tuple[str | None, str]:
+    if feedback_message and timestamp <= feedback_until:
+        return feedback_message, feedback_level
+
+    angle = squat_state.knee_angle
+    if (
+        angle is not None
+        and SQUAT_CONFIG.shallow_knee_angle < angle <= SQUAT_CONFIG.rep_bottom_knee_angle
+    ):
+        return "Go deeper", "warning"
+
+    return None, "info"
 
 
 def run_session(overlay: OverlayRenderer) -> None:
@@ -59,6 +80,9 @@ def run_session(overlay: OverlayRenderer) -> None:
     debug_enabled = False
     fps_estimate = 0.0
     previous_frame_time = 0.0
+    feedback_message: str | None = None
+    feedback_level = "info"
+    feedback_until = 0.0
 
     try:
         while True:
@@ -93,11 +117,32 @@ def run_session(overlay: OverlayRenderer) -> None:
                 summary.record_rep_start(elapsed)
             if rep_update.rep_completed:
                 summary.record_rep_complete(elapsed, reason=rep_update.reason)
+                if rep_update.reason == "too_shallow":
+                    feedback_message = "Bad rep: too shallow"
+                    feedback_level = "bad"
+                else:
+                    feedback_message = "Rep accepted"
+                    feedback_level = "ok"
+                feedback_until = timestamp + FEEDBACK_HOLD_SECONDS
 
             summary.rep_count = rep_counter.rep_count
             summary.bad_rep_count = rep_counter.bad_rep_count
 
-            overlay.draw(frame, results, squat_state, rep_counter)
+            feedback_text, feedback_kind = _current_feedback(
+                squat_state,
+                feedback_message,
+                feedback_level,
+                feedback_until,
+                timestamp,
+            )
+            overlay.draw(
+                frame,
+                results,
+                squat_state,
+                rep_counter,
+                feedback_text,
+                feedback_kind,
+            )
             if debug_enabled:
                 pose_detected = bool(
                     results

@@ -6,7 +6,15 @@ import cv2
 
 
 class OverlayRenderer:
-    def draw(self, frame_bgr, results, squat_state, rep_counter=None) -> None:
+    def draw(
+        self,
+        frame_bgr,
+        results,
+        squat_state,
+        rep_counter=None,
+        feedback_message: str | None = None,
+        feedback_level: str = "info",
+    ) -> None:
         # results.pose_landmarks is a list (per detected pose), each is list of landmarks
         if results and getattr(results, "pose_landmarks", None):
             if len(results.pose_landmarks) > 0:
@@ -49,6 +57,9 @@ class OverlayRenderer:
                 2,
                 cv2.LINE_AA,
             )
+
+        if feedback_message:
+            self._draw_feedback(frame_bgr, feedback_message, feedback_level)
 
     def draw_dashboard(self, frame_bgr) -> None:
         self._put_heading(frame_bgr, "GymGuardian Dashboard")
@@ -153,6 +164,54 @@ class OverlayRenderer:
                 cv2.LINE_AA,
             )
             y += line_height
+
+    def _draw_feedback(
+        self, frame_bgr, message: str, feedback_level: str = "info"
+    ) -> None:
+        colors = {
+            "ok": (0, 220, 0),
+            "bad": (0, 0, 255),
+            "warning": (0, 210, 255),
+            "info": (235, 235, 235),
+        }
+        color = colors.get(feedback_level, colors["info"])
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        scale = 1.0
+        thickness = 2
+        text_size, _ = cv2.getTextSize(message, font, scale, thickness)
+        text_w, text_h = text_size
+        _, frame_w = frame_bgr.shape[:2]
+        pad_x = 16
+        pad_y = 12
+        panel_x = max(20, frame_w - text_w - (pad_x * 2) - 24)
+        panel_y = 24
+        panel_w = text_w + (pad_x * 2)
+        panel_h = text_h + (pad_y * 2)
+
+        cv2.rectangle(
+            frame_bgr,
+            (panel_x, panel_y),
+            (panel_x + panel_w, panel_y + panel_h),
+            (20, 20, 20),
+            -1,
+        )
+        cv2.rectangle(
+            frame_bgr,
+            (panel_x, panel_y),
+            (panel_x + panel_w, panel_y + panel_h),
+            color,
+            2,
+        )
+        cv2.putText(
+            frame_bgr,
+            message,
+            (panel_x + pad_x, panel_y + pad_y + text_h),
+            font,
+            scale,
+            color,
+            thickness,
+            cv2.LINE_AA,
+        )
 
     def _put_heading(self, frame_bgr, text: str) -> None:
         cv2.putText(
