@@ -14,6 +14,7 @@ from core.paths import SESSIONS_DIR
 from pose.detector import PoseDetector
 from session.browser import (
     list_recent_sessions,
+    load_analytics_snapshot,
     open_session_folder,
     open_session_video,
 )
@@ -28,6 +29,7 @@ FRAME_HEIGHT = 720
 STATE_DASHBOARD = "dashboard"
 STATE_SESSION = "session"
 STATE_BROWSE = "browse"
+STATE_ANALYTICS = "analytics"
 UP_KEY = 2490368
 DOWN_KEY = 2621440
 FEEDBACK_HOLD_SECONDS = 2.0
@@ -206,6 +208,22 @@ def run_browser(overlay: OverlayRenderer) -> None:
             open_session_folder(sessions[selected_index])
 
 
+def run_analytics(overlay: OverlayRenderer) -> None:
+    """Render lightweight session analytics using saved summaries."""
+    snapshot = load_analytics_snapshot(SESSIONS_DIR)
+
+    while True:
+        frame = _blank_screen()
+        overlay.draw_analytics(frame, snapshot)
+        cv2.imshow(WINDOW_NAME, frame)
+
+        key = cv2.waitKeyEx(0)
+        if key in (8, 27):  # Backspace / Esc
+            return
+        if key in (ord("r"), ord("R")):
+            snapshot = load_analytics_snapshot(SESSIONS_DIR)
+
+
 def main() -> None:
     overlay = OverlayRenderer()
     state = STATE_DASHBOARD
@@ -223,6 +241,8 @@ def main() -> None:
                     state = STATE_SESSION
                 elif key in (ord("b"), ord("B")):
                     state = STATE_BROWSE
+                elif key in (ord("a"), ord("A")):
+                    state = STATE_ANALYTICS
                 elif key in (ord("q"), ord("Q"), 27):
                     break
             elif state == STATE_SESSION:
@@ -230,6 +250,9 @@ def main() -> None:
                 state = STATE_DASHBOARD
             elif state == STATE_BROWSE:
                 run_browser(overlay)
+                state = STATE_DASHBOARD
+            elif state == STATE_ANALYTICS:
+                run_analytics(overlay)
                 state = STATE_DASHBOARD
     finally:
         cv2.destroyAllWindows()

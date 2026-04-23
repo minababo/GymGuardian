@@ -43,7 +43,7 @@ class OverlayRenderer:
         self._fill_background(frame_bgr)
         frame_h, frame_w = frame_bgr.shape[:2]
         panel_w = min(780, frame_w - 140)
-        panel_h = 390
+        panel_h = 450
         panel_x = (frame_w - panel_w) // 2
         panel_y = max(70, (frame_h - panel_h) // 2)
 
@@ -68,7 +68,7 @@ class OverlayRenderer:
         )
         self._put_text(
             frame_bgr,
-            "AI-based real-time posture correction for home workouts",
+            "Real-time posture correction for home workouts",
             panel_x + 50,
             panel_y + 126,
             scale=0.66,
@@ -80,6 +80,7 @@ class OverlayRenderer:
         options = [
             ("S", "Start squat session"),
             ("B", "Browse saved sessions"),
+            ("A", "Open analytics dashboard"),
             ("Q", "Quit application"),
         ]
         row_y = panel_y + 190
@@ -96,7 +97,7 @@ class OverlayRenderer:
 
         self._put_text(
             frame_bgr,
-            "Press the highlighted key to continue. Use D during a session for debug metrics.",
+            "Press the highlighted key to continue. Use D for debug metrics during a session.",
             panel_x + 50,
             panel_y + panel_h - 30,
             scale=0.48,
@@ -258,6 +259,206 @@ class OverlayRenderer:
             )
             row_y += 46
 
+    def draw_analytics(self, frame_bgr, snapshot) -> None:
+        self._fill_background(frame_bgr)
+        frame_h, frame_w = frame_bgr.shape[:2]
+        margin = 36
+
+        self._put_text(
+            frame_bgr,
+            "Analytics Dashboard",
+            margin,
+            58,
+            scale=1.18,
+            color=self.PRIMARY,
+            thickness=2,
+        )
+        self._put_text(
+            frame_bgr,
+            "R: refresh    Backspace / Esc: dashboard",
+            margin + 2,
+            96,
+            scale=0.58,
+            color=self.MUTED,
+            thickness=1,
+            max_width=frame_w - (margin * 2),
+        )
+
+        summary_x = margin
+        summary_y = 132
+        summary_w = frame_w - (margin * 2)
+        summary_h = 250
+        self._draw_panel(
+            frame_bgr,
+            summary_x,
+            summary_y,
+            summary_w,
+            summary_h,
+            border_color=self.BORDER,
+            alpha=0.9,
+        )
+
+        self._put_text(
+            frame_bgr,
+            "Session Summary",
+            summary_x + 28,
+            summary_y + 42,
+            scale=0.72,
+            color=self.TEXT,
+            thickness=1,
+        )
+
+        if snapshot.total_sessions == 0:
+            self._put_text(
+                frame_bgr,
+                "No data available yet.",
+                summary_x + 28,
+                summary_y + 104,
+                scale=0.86,
+                color=self.TEXT,
+                thickness=1,
+                max_width=summary_w - 56,
+            )
+            self._put_text(
+                frame_bgr,
+                "Complete and save a workout session to populate analytics.",
+                summary_x + 28,
+                summary_y + 146,
+                scale=0.58,
+                color=self.MUTED,
+                thickness=1,
+                max_width=summary_w - 56,
+            )
+            return
+
+        timestamp_text = self._format_session_timestamp(snapshot.latest_timestamp)
+        self._put_text(
+            frame_bgr,
+            f"Latest session: {timestamp_text}",
+            summary_x + 28,
+            summary_y + 84,
+            scale=0.62,
+            color=self.MUTED,
+            thickness=1,
+            max_width=summary_w - 56,
+        )
+
+        cards_y = summary_y + 122
+        cards_x = summary_x + 24
+        cards_gap = 16
+        cards_w = summary_w - 48
+        card_w = (cards_w - (cards_gap * 3)) // 4
+        card_h = 96
+
+        self._draw_metric_tile(
+            frame_bgr,
+            cards_x,
+            cards_y,
+            card_w,
+            card_h,
+            "Total Sessions",
+            str(snapshot.total_sessions),
+            self.PRIMARY,
+        )
+        self._draw_metric_tile(
+            frame_bgr,
+            cards_x + (card_w + cards_gap),
+            cards_y,
+            card_w,
+            card_h,
+            "Latest Reps",
+            self._format_metric_value(snapshot.latest_rep_count),
+            self.TEXT,
+        )
+        self._draw_metric_tile(
+            frame_bgr,
+            cards_x + ((card_w + cards_gap) * 2),
+            cards_y,
+            card_w,
+            card_h,
+            "Latest Bad Reps",
+            self._format_metric_value(snapshot.latest_bad_rep_count),
+            self.ERROR if (snapshot.latest_bad_rep_count or 0) > 0 else self.TEXT,
+        )
+        self._draw_metric_tile(
+            frame_bgr,
+            cards_x + ((card_w + cards_gap) * 3),
+            cards_y,
+            card_w,
+            card_h,
+            "Bad Rep Rate",
+            self._format_percentage(snapshot.latest_bad_rep_percentage),
+            self.WARNING if (snapshot.latest_bad_rep_percentage or 0.0) > 0 else self.TEXT,
+        )
+
+        progress_x = margin
+        progress_y = summary_y + summary_h + 24
+        progress_w = frame_w - (margin * 2)
+        progress_h = frame_h - progress_y - margin
+        self._draw_panel(
+            frame_bgr,
+            progress_x,
+            progress_y,
+            progress_w,
+            progress_h,
+            border_color=self.BORDER,
+            alpha=0.9,
+        )
+        self._put_text(
+            frame_bgr,
+            "Progress vs Previous Session",
+            progress_x + 28,
+            progress_y + 42,
+            scale=0.72,
+            color=self.TEXT,
+            thickness=1,
+        )
+
+        previous_text = self._format_metric_value(snapshot.previous_rep_count)
+        self._put_text(
+            frame_bgr,
+            f"Previous rep count: {previous_text}",
+            progress_x + 28,
+            progress_y + 82,
+            scale=0.6,
+            color=self.MUTED,
+            thickness=1,
+            max_width=progress_w - 56,
+        )
+
+        delta_cards_y = progress_y + 112
+        delta_card_w = (progress_w - 72) // 2
+        delta_card_h = 90
+
+        rep_delta_text = self._format_change(snapshot.rep_count_change)
+        rep_delta_color = self._change_color(snapshot.rep_count_change, positive_is_good=True)
+        self._draw_metric_tile(
+            frame_bgr,
+            progress_x + 24,
+            delta_cards_y,
+            delta_card_w,
+            delta_card_h,
+            "Rep Count Change",
+            rep_delta_text,
+            rep_delta_color,
+        )
+
+        bad_delta_text = self._format_change(snapshot.bad_rep_count_change)
+        bad_delta_color = self._change_color(
+            snapshot.bad_rep_count_change,
+            positive_is_good=False,
+        )
+        self._draw_metric_tile(
+            frame_bgr,
+            progress_x + 40 + delta_card_w,
+            delta_cards_y,
+            delta_card_w,
+            delta_card_h,
+            "Bad Rep Change",
+            bad_delta_text,
+            bad_delta_color,
+        )
+
     def draw_debug(self, frame_bgr, debug_info: dict) -> None:
         lines = [
             "Debug (D to toggle)",
@@ -405,6 +606,48 @@ class OverlayRenderer:
             max_width=panel_w - (pad * 2),
         )
 
+    def _draw_metric_tile(
+        self,
+        frame_bgr,
+        x: int,
+        y: int,
+        width: int,
+        height: int,
+        label: str,
+        value: str,
+        value_color: tuple[int, int, int],
+    ) -> None:
+        self._draw_panel(
+            frame_bgr,
+            x,
+            y,
+            width,
+            height,
+            color=self.PANEL_ALT,
+            border_color=self.BORDER,
+            alpha=0.94,
+        )
+        self._put_text(
+            frame_bgr,
+            label,
+            x + 16,
+            y + 28,
+            scale=0.5,
+            color=self.MUTED,
+            thickness=1,
+            max_width=width - 32,
+        )
+        self._put_text(
+            frame_bgr,
+            value,
+            x + 16,
+            y + 66,
+            scale=0.88,
+            color=value_color,
+            thickness=1,
+            max_width=width - 32,
+        )
+
     def _draw_feedback(
         self, frame_bgr, message: str, feedback_level: str = "info"
     ) -> None:
@@ -546,9 +789,7 @@ class OverlayRenderer:
             cv2.LINE_AA,
         )
 
-    def _fit_text(
-        self, text: str, max_width: int, scale: float, thickness: int
-    ) -> str:
+    def _fit_text(self, text: str, max_width: int, scale: float, thickness: int) -> str:
         if max_width <= 0:
             return "..."
         if self._text_width(text, scale, thickness) <= max_width:
@@ -574,4 +815,44 @@ class OverlayRenderer:
     def _format_result(value: str) -> str:
         if not value or value == "none":
             return "none"
+        return value
+
+    @staticmethod
+    def _format_metric_value(value) -> str:
+        if value is None:
+            return "N/A"
+        return str(value)
+
+    @staticmethod
+    def _format_percentage(value: float | None) -> str:
+        if value is None:
+            return "N/A"
+        return f"{value:.1f}%"
+
+    @staticmethod
+    def _format_change(value: int | None) -> str:
+        if value is None:
+            return "N/A"
+        return f"{value:+d}"
+
+    def _change_color(
+        self, value: int | None, *, positive_is_good: bool
+    ) -> tuple[int, int, int]:
+        if value is None or value == 0:
+            return self.TEXT
+        if positive_is_good:
+            return self.PRIMARY if value > 0 else self.WARNING
+        return self.PRIMARY if value < 0 else self.ERROR
+
+    @staticmethod
+    def _format_session_timestamp(value: str | None) -> str:
+        if not value:
+            return "N/A"
+        if len(value) == 15 and "_" in value:
+            date_part, time_part = value.split("_", maxsplit=1)
+            if len(date_part) == 8 and len(time_part) == 6:
+                return (
+                    f"{date_part[0:4]}-{date_part[4:6]}-{date_part[6:8]} "
+                    f"{time_part[0:2]}:{time_part[2:4]}:{time_part[4:6]}"
+                )
         return value
