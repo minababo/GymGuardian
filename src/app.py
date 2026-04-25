@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import ctypes
+from ctypes import wintypes
 from datetime import datetime
+import os
 import time
 
 import cv2
@@ -33,10 +36,101 @@ STATE_ANALYTICS = "analytics"
 UP_KEY = 2490368
 DOWN_KEY = 2621440
 FEEDBACK_HOLD_SECONDS = 2.0
+SW_MAXIMIZE = 3
+
+_WINDOW_MAXIMIZED = False
+
+
+def _get_window_client_size(window_name: str) -> tuple[int, int] | None:
+    """Return the drawable client area for the app window."""
+    if os.name == "nt":
+        hwnd = ctypes.windll.user32.FindWindowW(None, window_name)
+        if hwnd:
+            rect = wintypes.RECT()
+            if ctypes.windll.user32.GetClientRect(hwnd, ctypes.byref(rect)):
+                window_w = rect.right - rect.left
+                window_h = rect.bottom - rect.top
+                if window_w > 0 and window_h > 0:
+                    return window_w, window_h
+
+    try:
+        _, _, window_w, window_h = cv2.getWindowImageRect(window_name)
+        if window_w > 0 and window_h > 0:
+            return window_w, window_h
+    except cv2.error:
+        pass
+
+    return None
 
 
 def _blank_screen() -> np.ndarray:
-    return np.zeros((FRAME_HEIGHT, FRAME_WIDTH, 3), dtype=np.uint8)
+    window_size = _get_window_client_size(WINDOW_NAME)
+    if window_size is not None:
+        window_w, window_h = window_size
+        canvas = np.empty((window_h, window_w, 3), dtype=np.uint8)
+        canvas[:] = (15, 15, 15)
+        return canvas
+
+    canvas = np.empty((FRAME_HEIGHT, FRAME_WIDTH, 3), dtype=np.uint8)
+    canvas[:] = (15, 15, 15)
+    return canvas
+
+
+def _maximize_window(window_name: str) -> None:
+    """Start the app maximized while preserving standard OS window controls."""
+    if os.name != "nt":
+        return
+
+    try:
+        hwnd = ctypes.windll.user32.FindWindowW(None, window_name)
+        if hwnd:
+            ctypes.windll.user32.ShowWindow(hwnd, SW_MAXIMIZE)
+    except Exception:
+        # Fall back to the default OpenCV window behavior if maximize fails.
+        return
+
+
+def _fit_frame_to_window(window_name: str, frame: np.ndarray) -> np.ndarray:
+    """Letterbox frames so window resizing never stretches the content."""
+    window_size = _get_window_client_size(window_name)
+    if window_size is None:
+        return frame
+
+    window_w, window_h = window_size
+
+    frame_h, frame_w = frame.shape[:2]
+    scale = min(window_w / frame_w, window_h / frame_h)
+    if scale <= 0:
+        return frame
+
+    target_w = max(1, int(frame_w * scale))
+    target_h = max(1, int(frame_h * scale))
+    if (
+        target_w == frame_w
+        and target_h == frame_h
+        and window_w == frame_w
+        and window_h == frame_h
+    ):
+        return frame
+
+    resized = cv2.resize(frame, (target_w, target_h), interpolation=cv2.INTER_LINEAR)
+    canvas = np.empty((window_h, window_w, 3), dtype=frame.dtype)
+    canvas[:] = (15, 15, 15)
+    x_offset = (window_w - target_w) // 2
+    y_offset = (window_h - target_h) // 2
+    canvas[y_offset:y_offset + target_h, x_offset:x_offset + target_w] = resized
+    return canvas
+
+
+def _show_frame(window_name: str, frame: np.ndarray) -> None:
+    """Display a frame with aspect-preserving scaling and maximize once on startup."""
+    global _WINDOW_MAXIMIZED
+
+    cv2.imshow(window_name, _fit_frame_to_window(window_name, frame))
+
+    if not _WINDOW_MAXIMIZED:
+        _maximize_window(window_name)
+        _WINDOW_MAXIMIZED = True
 
 
 def _current_feedback(
@@ -114,11 +208,16 @@ def run_session(overlay: OverlayRenderer) -> None:
             squat_state = analyzer.classify(results)
             rep_update = rep_counter.update(squat_state, timestamp)
 
+            if squat_state.knee_angle is not None:
+                summary.add_knee_angle(squat_state.knee_angle)
+
             elapsed = timestamp - start_time
             if rep_update.rep_started:
                 summary.record_rep_start(elapsed)
             if rep_update.rep_completed:
                 summary.record_rep_complete(elapsed, reason=rep_update.reason)
+                if rep_update.reason:
+                    summary.record_issue(rep_update.reason)
                 if rep_update.reason == "too_shallow":
                     feedback_message = "Bad rep: too shallow"
                     feedback_level = "bad"
@@ -165,9 +264,9 @@ def run_session(overlay: OverlayRenderer) -> None:
                 overlay.draw_debug(frame, debug_info)
             recorder.write(frame)
 
-            cv2.imshow(WINDOW_NAME, frame)
+            _show_frame(WINDOW_NAME, frame)
             key = cv2.waitKey(1) & 0xFF
-            if key in (27, ord("q")):
+            if key == 27:
                 break
             if key in (ord("d"), ord("D")):
                 debug_enabled = not debug_enabled
@@ -193,10 +292,10 @@ def run_browser(overlay: OverlayRenderer) -> None:
     while True:
         frame = _blank_screen()
         overlay.draw_browser(frame, sessions, selected_index)
-        cv2.imshow(WINDOW_NAME, frame)
+        _show_frame(WINDOW_NAME, frame)
 
         key = cv2.waitKeyEx(0)
-        if key == 8:  # Backspace
+        if key == 27:
             return
         if key == UP_KEY and sessions:
             selected_index = max(0, selected_index - 1)
@@ -215,10 +314,10 @@ def run_analytics(overlay: OverlayRenderer) -> None:
     while True:
         frame = _blank_screen()
         overlay.draw_analytics(frame, snapshot)
-        cv2.imshow(WINDOW_NAME, frame)
+        _show_frame(WINDOW_NAME, frame)
 
         key = cv2.waitKeyEx(0)
-        if key in (8, 27):  # Backspace / Esc
+        if key == 27:
             return
         if key in (ord("r"), ord("R")):
             snapshot = load_analytics_snapshot(SESSIONS_DIR)
@@ -227,14 +326,15 @@ def run_analytics(overlay: OverlayRenderer) -> None:
 def main() -> None:
     overlay = OverlayRenderer()
     state = STATE_DASHBOARD
-    cv2.namedWindow(WINDOW_NAME)
+    cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
+    cv2.resizeWindow(WINDOW_NAME, FRAME_WIDTH, FRAME_HEIGHT)
 
     try:
         while True:
             if state == STATE_DASHBOARD:
                 frame = _blank_screen()
                 overlay.draw_dashboard(frame)
-                cv2.imshow(WINDOW_NAME, frame)
+                _show_frame(WINDOW_NAME, frame)
                 key = cv2.waitKeyEx(0)
 
                 if key in (ord("s"), ord("S")):
@@ -243,7 +343,7 @@ def main() -> None:
                     state = STATE_BROWSE
                 elif key in (ord("a"), ord("A")):
                     state = STATE_ANALYTICS
-                elif key in (ord("q"), ord("Q"), 27):
+                elif key == 27:
                     break
             elif state == STATE_SESSION:
                 run_session(overlay)
