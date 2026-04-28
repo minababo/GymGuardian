@@ -208,8 +208,11 @@ def run_session(overlay: OverlayRenderer) -> None:
             squat_state = analyzer.classify(results)
             rep_update = rep_counter.update(squat_state, timestamp)
 
-            if squat_state.knee_angle is not None:
-                summary.add_knee_angle(squat_state.knee_angle)
+            summary.add_pose_metrics(
+                knee_angle=squat_state.knee_angle,
+                ankle_angle=squat_state.ankle_angle,
+                torso_angle=squat_state.torso_angle,
+            )
 
             elapsed = timestamp - start_time
             if rep_update.rep_started:
