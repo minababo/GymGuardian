@@ -23,6 +23,8 @@ class SessionSummary:
     bad_rep_count: int = 0
     events: List[RepEvent] = field(default_factory=list)
     knee_angles: List[float] = field(default_factory=list)
+    ankle_angles: List[float] = field(default_factory=list)
+    torso_angles: List[float] = field(default_factory=list)
     issue_counts: Dict[str, int] = field(default_factory=dict)
 
     def add_event(self, timestamp: float, label: str, reason: str = "") -> None:
@@ -30,6 +32,20 @@ class SessionSummary:
 
     def add_knee_angle(self, angle: float) -> None:
         self.knee_angles.append(angle)
+
+    def add_pose_metrics(
+        self,
+        *,
+        knee_angle: Optional[float] = None,
+        ankle_angle: Optional[float] = None,
+        torso_angle: Optional[float] = None,
+    ) -> None:
+        if knee_angle is not None:
+            self.knee_angles.append(knee_angle)
+        if ankle_angle is not None:
+            self.ankle_angles.append(ankle_angle)
+        if torso_angle is not None:
+            self.torso_angles.append(torso_angle)
 
     def record_issue(self, reason: str) -> None:
         for issue in self._split_issues(reason):
@@ -48,6 +64,9 @@ class SessionSummary:
             "bad_rep_count": self.bad_rep_count,
             "avg_knee_angle": self._average_knee_angle(),
             "min_knee_angle": self._minimum_knee_angle(),
+            "avg_ankle_angle": self._average_ankle_angle(),
+            "min_ankle_angle": self._minimum_ankle_angle(),
+            "avg_torso_angle": self._average_torso_angle(),
             "issue_counts": dict(sorted(self.issue_counts.items())),
             "most_common_issue": self._most_common_issue(),
             "events": [
@@ -68,14 +87,19 @@ class SessionSummary:
         return output_path
 
     def _average_knee_angle(self) -> Optional[float]:
-        if not self.knee_angles:
-            return None
-        return round(sum(self.knee_angles) / len(self.knee_angles), 2)
+        return self._average_value(self.knee_angles)
 
     def _minimum_knee_angle(self) -> Optional[float]:
-        if not self.knee_angles:
-            return None
-        return round(min(self.knee_angles), 2)
+        return self._minimum_value(self.knee_angles)
+
+    def _average_ankle_angle(self) -> Optional[float]:
+        return self._average_value(self.ankle_angles)
+
+    def _minimum_ankle_angle(self) -> Optional[float]:
+        return self._minimum_value(self.ankle_angles)
+
+    def _average_torso_angle(self) -> Optional[float]:
+        return self._average_value(self.torso_angles)
 
     def _most_common_issue(self) -> Optional[str]:
         if not self.issue_counts:
@@ -89,3 +113,15 @@ class SessionSummary:
     @staticmethod
     def _split_issues(reason: str) -> List[str]:
         return [issue.strip() for issue in reason.split(",") if issue.strip()]
+
+    @staticmethod
+    def _average_value(values: List[float]) -> Optional[float]:
+        if not values:
+            return None
+        return round(sum(values) / len(values), 2)
+
+    @staticmethod
+    def _minimum_value(values: List[float]) -> Optional[float]:
+        if not values:
+            return None
+        return round(min(values), 2)
