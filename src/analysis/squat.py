@@ -13,10 +13,12 @@ from core.config import SQUAT_CONFIG
 class SquatState:
     label: str
     knee_angle: Optional[float]
+    ankle_angle: Optional[float] = None
+    torso_angle: Optional[float] = None
 
 
 class SquatStateAnalyzer:
-    """Classify a squat as standing, down, or transition using knee angles."""
+    """Classify a squat and expose simple joint-angle analytics."""
 
     def classify(self, pose_result) -> SquatState:
         # pose_result.pose_landmarks -> list of poses; each pose -> list of landmarks
@@ -31,41 +33,85 @@ class SquatStateAnalyzer:
         # Key indices we need (BlazePose):
         # 23 left hip, 25 left knee, 27 left ankle
         # 24 right hip, 26 right knee, 28 right ankle
-        left = self._knee_angle_if_visible(landmarks, 23, 25, 27)
-        right = self._knee_angle_if_visible(landmarks, 24, 26, 28)
+        knee_angle = self._average_angle(
+            [
+                self._angle_if_visible(landmarks, 23, 25, 27),
+                self._angle_if_visible(landmarks, 24, 26, 28),
+            ]
+        )
+        ankle_angle = self._average_angle(
+            [
+                self._angle_if_visible(landmarks, 25, 27, 31),
+                self._angle_if_visible(landmarks, 26, 28, 32),
+            ]
+        )
+        torso_angle = self._average_angle(
+            [
+                self._torso_angle_if_visible(landmarks, 11, 23),
+                self._torso_angle_if_visible(landmarks, 12, 24),
+            ]
+        )
 
-        angle = self._average_angle([left, right])
-        if angle is None:
-            return SquatState(label="no_pose", knee_angle=None)
+        if knee_angle is None:
+            return SquatState(
+                label="no_pose",
+                knee_angle=None,
+                ankle_angle=ankle_angle,
+                torso_angle=torso_angle,
+            )
 
-        if angle <= SQUAT_CONFIG.down_knee_angle:
-            return SquatState(label="down", knee_angle=angle)
-        if angle >= SQUAT_CONFIG.up_knee_angle:
-            return SquatState(label="standing", knee_angle=angle)
+        if knee_angle <= SQUAT_CONFIG.down_knee_angle:
+            label = "down"
+        elif knee_angle >= SQUAT_CONFIG.up_knee_angle:
+            label = "standing"
+        else:
+            label = "transition"
 
-        return SquatState(label="transition", knee_angle=angle)
+        return SquatState(
+            label=label,
+            knee_angle=knee_angle,
+            ankle_angle=ankle_angle,
+            torso_angle=torso_angle,
+        )
 
-    def _knee_angle_if_visible(
-        self, landmarks, hip_i, knee_i, ankle_i
+    def _angle_if_visible(
+        self, landmarks, point_a: int, point_b: int, point_c: int
     ) -> Optional[float]:
-        hip = landmarks[hip_i]
-        knee = landmarks[knee_i]
-        ankle = landmarks[ankle_i]
-
-        # Tasks landmarks may include visibility/presence depending on model; be defensive.
-        vis = [
-            getattr(hip, "visibility", 1.0),
-            getattr(knee, "visibility", 1.0),
-            getattr(ankle, "visibility", 1.0),
-        ]
-        if min(vis) < 0.5:
+        if not self._landmarks_visible(landmarks, point_a, point_b, point_c):
             return None
 
+        landmark_a = landmarks[point_a]
+        landmark_b = landmarks[point_b]
+        landmark_c = landmarks[point_c]
         return _angle_degrees(
-            (hip.x, hip.y),
-            (knee.x, knee.y),
-            (ankle.x, ankle.y),
+            (landmark_a.x, landmark_a.y),
+            (landmark_b.x, landmark_b.y),
+            (landmark_c.x, landmark_c.y),
         )
+
+    def _torso_angle_if_visible(
+        self, landmarks, shoulder_i: int, hip_i: int
+    ) -> Optional[float]:
+        if not self._landmarks_visible(landmarks, shoulder_i, hip_i):
+            return None
+
+        shoulder = landmarks[shoulder_i]
+        hip = landmarks[hip_i]
+        dx = shoulder.x - hip.x
+        dy = shoulder.y - hip.y
+        if dx == 0 and dy == 0:
+            return 0.0
+
+        vertical_span = abs(dy)
+        if vertical_span == 0:
+            return 90.0
+
+        return math.degrees(math.atan2(abs(dx), vertical_span))
+
+    @staticmethod
+    def _landmarks_visible(landmarks, *indices: int) -> bool:
+        visibilities = [getattr(landmarks[index], "visibility", 1.0) for index in indices]
+        return min(visibilities) >= 0.5
 
     @staticmethod
     def _average_angle(values: Iterable[Optional[float]]) -> Optional[float]:
