@@ -8,6 +8,8 @@ import os
 from pathlib import Path
 from typing import Optional
 
+from session.insights import bad_rep_percentage, build_recommendation
+
 
 @dataclass(frozen=True)
 class SessionBrowserItem:
@@ -17,6 +19,7 @@ class SessionBrowserItem:
     folder_path: Path
     video_path: Path
     summary_path: Path
+    valid_session: bool
     rep_count: Optional[int]
     bad_rep_count: Optional[int]
 
@@ -51,6 +54,7 @@ class AnalyticsSessionItem:
     """Saved session data used by the analytics dashboard."""
 
     folder_name: str
+    valid_session: bool
     rep_count: int
     bad_rep_count: int
     avg_knee_angle: Optional[float]
@@ -79,13 +83,15 @@ def list_recent_sessions(
         data = _load_summary_data(summary_path)
         rep_count = _safe_int(data.get("rep_count")) if data else None
         bad_rep_count = _safe_int(data.get("bad_rep_count")) if data else None
+        valid_session = _derive_valid_session(data, rep_count)
 
         items.append(
             SessionBrowserItem(
-                folder_name=folder.name,
+                folder_name=_format_session_label(folder.name, valid_session),
                 folder_path=folder,
                 video_path=video_path,
                 summary_path=summary_path,
+                valid_session=valid_session,
                 rep_count=rep_count,
                 bad_rep_count=bad_rep_count,
             )
@@ -111,8 +117,12 @@ def load_analytics_snapshot(sessions_dir: Path) -> AnalyticsSnapshot:
     latest = meaningful_sessions[0]
     previous = meaningful_sessions[1] if len(meaningful_sessions) > 1 else None
 
-    latest_bad_rep_percentage = _bad_rep_percentage(latest)
-    previous_bad_rep_percentage = _bad_rep_percentage(previous) if previous else None
+    latest_bad_rep_percentage = bad_rep_percentage(latest.rep_count, latest.bad_rep_count)
+    previous_bad_rep_percentage = (
+        bad_rep_percentage(previous.rep_count, previous.bad_rep_count)
+        if previous
+        else None
+    )
     rep_count_change = None
     bad_rep_percentage_change = None
     avg_knee_angle_change = None
@@ -133,7 +143,7 @@ def load_analytics_snapshot(sessions_dir: Path) -> AnalyticsSnapshot:
                 2,
             )
 
-    main_concern, suggested_improvement, focus_area = _build_recommendation(
+    main_concern, suggested_improvement, focus_area = build_recommendation(
         latest.most_common_issue
     )
 
@@ -211,6 +221,7 @@ def _load_analytics_sessions(
         analytics_sessions.append(
             AnalyticsSessionItem(
                 folder_name=session.folder_name,
+                valid_session=_derive_valid_session(data, rep_count),
                 rep_count=rep_count,
                 bad_rep_count=bad_rep_count,
                 avg_knee_angle=_safe_float(data.get("avg_knee_angle")),
@@ -225,55 +236,24 @@ def _load_analytics_sessions(
 
 
 def _is_meaningful_session(session: AnalyticsSessionItem) -> bool:
-    return session.rep_count > 0
+    return session.valid_session and session.rep_count > 0
 
 
-def _bad_rep_percentage(session: AnalyticsSessionItem | None) -> Optional[float]:
-    if session is None:
-        return None
-    if session.rep_count <= 0:
-        return 0.0
-    return round((session.bad_rep_count / session.rep_count) * 100.0, 2)
+def _derive_valid_session(data: Optional[dict], rep_count: Optional[int]) -> bool:
+    if not data:
+        return False
+
+    explicit_flag = _safe_bool(data.get("valid_session"))
+    if explicit_flag is not None:
+        return explicit_flag
+
+    return rep_count is not None and rep_count > 0
 
 
-def _build_recommendation(
-    issue: Optional[str],
-) -> tuple[str, str, str]:
-    normalized_issue = issue or ""
-    if normalized_issue == "too_shallow":
-        return (
-            "Depth is the main concern.",
-            "Increase squat depth and aim for a lower knee angle.",
-            "Knee bend depth",
-        )
-    if _issue_matches(normalized_issue, ("ankle", "foot", "stability")):
-        return (
-            "Ankle control is the main concern.",
-            "Improve ankle stability and foot positioning.",
-            "Ankle control",
-        )
-    if _issue_matches(normalized_issue, ("torso", "back", "lean", "posture")):
-        return (
-            "Torso posture is the main concern.",
-            "Keep torso more controlled and avoid excessive forward lean.",
-            "Torso posture",
-        )
-    if normalized_issue:
-        readable_issue = normalized_issue.replace("_", " ")
-        return (
-            f"Main concern: {readable_issue}.",
-            "Maintain current form consistency.",
-            "Consistency",
-        )
-    return (
-        "No major form issue detected.",
-        "Maintain current form consistency.",
-        "Consistency",
-    )
-
-
-def _issue_matches(issue: str, keywords: tuple[str, ...]) -> bool:
-    return any(keyword in issue for keyword in keywords)
+def _format_session_label(folder_name: str, valid_session: bool) -> str:
+    if valid_session:
+        return folder_name
+    return f"{folder_name} (incomplete)"
 
 
 def _safe_int(value) -> Optional[int]:
@@ -281,6 +261,18 @@ def _safe_int(value) -> Optional[int]:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _safe_bool(value) -> Optional[bool]:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"true", "1", "yes"}:
+            return True
+        if lowered in {"false", "0", "no"}:
+            return False
+    return None
 
 
 def _safe_float(value) -> Optional[float]:

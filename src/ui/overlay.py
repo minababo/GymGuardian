@@ -486,7 +486,7 @@ class OverlayRenderer:
             third_row_y,
             card_w,
             issue_h,
-            "Torso Posture Metric",
+            "Avg Torso Lean",
             self._format_angle(snapshot.latest_avg_torso_angle),
             self.TEXT,
             value_scale=0.62 if compact_layout else 0.68,
@@ -655,19 +655,34 @@ class OverlayRenderer:
         else:
             lines.append(f"Knee angle: {knee_angle:.1f}")
 
+        ankle_angle = debug_info.get("ankle_angle")
+        if ankle_angle is None:
+            lines.append("Ankle angle: n/a")
+        else:
+            lines.append(f"Ankle angle: {ankle_angle:.1f}")
+
+        torso_angle = debug_info.get("torso_angle")
+        if torso_angle is None:
+            lines.append("Torso angle: n/a")
+        else:
+            lines.append(f"Torso angle: {torso_angle:.1f}")
+
         lines.extend(
             [
                 f"down_knee_angle: {debug_info.get('down_knee_angle')}",
                 f"up_knee_angle: {debug_info.get('up_knee_angle')}",
                 f"rep_bottom_knee_angle: {debug_info.get('rep_bottom_knee_angle')}",
                 f"shallow_knee_angle: {debug_info.get('shallow_knee_angle')}",
+                f"ankle_control_angle: {debug_info.get('ankle_control_angle')}",
+                f"torso_lean_angle: {debug_info.get('torso_lean_angle')}",
                 f"down_hold_frames: {debug_info.get('down_hold_frames')}",
+                f"ready_standing_frames: {debug_info.get('ready_standing_frames')}",
                 f"min_rep_seconds: {debug_info.get('min_rep_seconds')}",
             ]
         )
 
         panel_x = 20
-        panel_y = 194
+        panel_y = 260
         line_height = 26
         panel_w = 460
         panel_h = 24 + line_height * len(lines)
@@ -712,7 +727,7 @@ class OverlayRenderer:
         panel_x = 20
         panel_y = 20
         panel_w = 470
-        panel_h = 184
+        panel_h = 228
         pad = 18
 
         self._draw_panel(
@@ -752,10 +767,34 @@ class OverlayRenderer:
             max_width=panel_w - (pad * 2),
         )
 
+        ankle_text = self._format_angle_metric("Ankle angle", squat_state.ankle_angle)
+        self._put_text(
+            frame_bgr,
+            ankle_text,
+            panel_x + pad,
+            panel_y + 102,
+            scale=0.58,
+            color=self.TEXT,
+            thickness=1,
+            max_width=panel_w - (pad * 2),
+        )
+
+        torso_text = self._format_angle_metric("Torso lean", squat_state.torso_angle)
+        self._put_text(
+            frame_bgr,
+            torso_text,
+            panel_x + pad,
+            panel_y + 130,
+            scale=0.58,
+            color=self.TEXT,
+            thickness=1,
+            max_width=panel_w - (pad * 2),
+        )
+
         if rep_counter is None:
             return
 
-        reps_y = panel_y + 112
+        reps_y = panel_y + 164
         self._put_text(
             frame_bgr,
             f"Reps: {rep_counter.rep_count}",
@@ -782,7 +821,7 @@ class OverlayRenderer:
             frame_bgr,
             f"Last: {last_text}",
             panel_x + pad,
-            panel_y + 144,
+            panel_y + 196,
             scale=0.56,
             color=self.MUTED,
             thickness=1,
@@ -792,7 +831,7 @@ class OverlayRenderer:
             frame_bgr,
             "Esc: end session    D: debug overlay",
             panel_x + pad,
-            panel_y + 170,
+            panel_y + 214,
             scale=0.48,
             color=self.MUTED,
             thickness=1,
@@ -1090,6 +1129,12 @@ class OverlayRenderer:
         if value is None:
             return "N/A"
         return f"{value:+.1f} pts"
+
+    @staticmethod
+    def _format_angle_metric(label: str, value: float | None) -> str:
+        if value is None:
+            return f"{label}: n/a"
+        return f"{label}: {value:.1f} deg"
 
     @staticmethod
     def _format_angle(value: float | None) -> str:
