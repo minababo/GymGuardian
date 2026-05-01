@@ -1,92 +1,110 @@
 # GymGuardian
 
-AI-powered exercise form analysis and feedback system using computer vision.
+GymGuardian is a desktop-based real-time squat monitoring and analytics system built for a final-year computing project. The current project scope is intentionally narrow: one exercise, one camera, and one rule-based coaching pipeline focused on squat quality.
 
-## Problem Statement
+## Project Positioning
 
-Many individuals perform exercises without access to professional coaching, leading to incorrect form, increased injury risk, and reduced training effectiveness. While AI-based fitness tools exist, many provide only basic rep counting or binary correctness feedback without meaningful insight into movement quality.
+GymGuardian is treated as a specialized squat-coaching prototype rather than a generic fitness platform. The project prioritizes:
 
-## Project Aim
+- robust squat rep counting
+- rule-based form checks for depth, ankle control, and torso lean
+- meaningful-session analytics and progress tracking
+- evidence exports that support academic evaluation
 
-GymGuardian aims to provide real-time exercise form analysis using pose estimation techniques. The system focuses on identifying posture states and movement patterns during exercises, enabling basic feedback and session-level analysis suitable for a prototype-level academic project.
+Multi-exercise support is considered future work.
 
-## Key Features
+## Current Features
 
-- Real-time pose detection using MediaPipe and OpenCV
-- Live webcam feed with skeletal overlay
-- Exercise state classification (e.g., squat phases)
-- Session recording and summary output
-- Configurable thresholds for posture analysis
-- Modular structure for extending to additional exercises
+- real-time pose detection using MediaPipe and OpenCV
+- squat state classification with smoothed joint-angle analysis
+- rep counting driven by knee-angle state transitions
+- rule-based form checks for:
+  - `too_shallow`
+  - `ankle_control`
+  - `torso_lean`
+- saved session artifacts per run:
+  - `summary.json`
+  - `rep_metrics.csv`
+  - `session_report.txt`
+  - `session.mp4`
+- analytics dashboard for:
+  - latest meaningful session metrics
+  - progress vs previous meaningful session
+  - recommendation-style session insights
+- session browser for opening saved videos and folders
 
 ## Technology Stack
 
-- **Language**: Python 3.x
-- **Computer Vision**: MediaPipe, OpenCV
-- **Numerical Processing**: NumPy
-- **Architecture**: Modular Python application
-- **Version Control**: Git and GitHub
+- Python 3.x
+- MediaPipe
+- OpenCV
+- NumPy
 
-## Project Structure
+## Repository Structure
 
-```
+```text
 GymGuardian/
-├── src/
-│ ├── analysis/ # exercise state and form analysis
-│ ├── pose/ # pose detection logic
-│ ├── session/ # session recording and summaries
-│ ├── ui/ # visual overlays and display
-│ ├── core/ # configuration and shared utilities
-│ └── app.py # application entry point
-├── assets/
-│ └── models/ # pose models (ignored from version control)
-├── requirements.txt
-├── .gitignore
-└── README.md
+|-- docs/
+|   |-- final-project-artifacts.md
+|   `-- test-plan.md
+|-- src/
+|   |-- analysis/
+|   |-- core/
+|   |-- pose/
+|   |-- session/
+|   |-- ui/
+|   `-- app.py
+|-- requirements.txt
+`-- README.md
 ```
 
-## Setup & Installation
+## Running the Application
 
 ### Prerequisites
 
 - Python 3.9 or later
-- Webcam
+- Windows desktop/laptop environment
+- Webcam with the user's lower body clearly visible
 
-### Installation Steps
+### Setup
 
-1.  **Clone the Repository**
+```bash
+python -m venv venv
+venv\Scripts\activate
+pip install -r requirements.txt
+```
 
-    ```bash
-    git clone https://github.com/minababo/GymGuardian.git
-    cd GymGuardian
-    ```
+### Start the app
 
-2.  **Create and Activate a Virtual Environment**
+```bash
+python src/app.py
+```
 
-    ```bash
-    # Create the virtual environment
-    python -m venv venv
+Controls:
 
-    # Activate on Windows (Git Bash)
-    source venv/Scripts/activate
-    ```
+- `S`: start squat session
+- `B`: browse saved sessions
+- `A`: open analytics dashboard
+- `Esc`: go back or exit
+- `D`: toggle debug overlay during a live session
 
-3.  **Install Dependencies**
+## Camera Assumptions
 
-    ```bash
-    pip install -r requirements.txt
-    ```
+The current prototype assumes:
 
-4.  **Run the Application**
-    ```bash
-    python src/app.py
-    ```
+- a single front-facing or near-front-facing webcam
+- stable indoor lighting
+- the full lower body remains visible during the squat
+- no medical or professional coaching guarantee
 
-Press q or Esc to exit the application window.
+## Documentation
+
+- `docs/final-project-artifacts.md`: architecture, workflow, methodology, and project considerations
+- `docs/test-plan.md`: evaluation matrix, evidence checklist, and report-ready results table
 
 ## Project Status
 
-This project is developed as part of the PUSL3190 Computing Project module and represents a prototype-level implementation aligned with academic assessment requirements.
+This repository represents a prototype-level academic system developed for the PUSL3190 Computing Project module.
 
 ## License
 
