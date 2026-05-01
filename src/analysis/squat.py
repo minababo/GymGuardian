@@ -1,10 +1,11 @@
-"""Squat state classification and rep counting for MVP (Tasks Pose Landmarker result)."""
+"""Squat state classification and rep counting for the squat coach prototype."""
 
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass
 import math
-from typing import Iterable, Optional
+from typing import Deque, Optional
 
 from core.config import SQUAT_CONFIG
 
@@ -15,51 +16,49 @@ class SquatState:
     knee_angle: Optional[float]
     ankle_angle: Optional[float] = None
     torso_angle: Optional[float] = None
+    pose_visible: bool = False
 
 
 class SquatStateAnalyzer:
-    """Classify a squat and expose simple joint-angle analytics."""
+    """Classify squat state from pose landmarks with light smoothing."""
+
+    def __init__(self) -> None:
+        window = max(1, SQUAT_CONFIG.angle_smoothing_window)
+        self._knee_history: Deque[float] = deque(maxlen=window)
+        self._ankle_history: Deque[float] = deque(maxlen=window)
+        self._torso_history: Deque[float] = deque(maxlen=window)
+        self._missing_pose_frames = 0
 
     def classify(self, pose_result) -> SquatState:
         # pose_result.pose_landmarks -> list of poses; each pose -> list of landmarks
         if pose_result is None or not getattr(pose_result, "pose_landmarks", None):
+            self._mark_missing_pose()
             return SquatState(label="no_pose", knee_angle=None)
         if len(pose_result.pose_landmarks) == 0:
+            self._mark_missing_pose()
             return SquatState(label="no_pose", knee_angle=None)
 
         landmarks = pose_result.pose_landmarks[0]
 
-        # MediaPipe Tasks pose landmarks use indices aligned with BlazePose landmark order.
-        # Key indices we need (BlazePose):
-        # 23 left hip, 25 left knee, 27 left ankle
-        # 24 right hip, 26 right knee, 28 right ankle
-        knee_angle = self._average_angle(
-            [
-                self._angle_if_visible(landmarks, 23, 25, 27),
-                self._angle_if_visible(landmarks, 24, 26, 28),
-            ]
+        raw_knee_angle = self._angle_if_visible(landmarks, 23, 25, 27)
+        if raw_knee_angle is None:
+            # Treat partial lower-body detection as no pose for rep logic.
+            self._mark_missing_pose()
+            return SquatState(label="no_pose", knee_angle=None)
+
+        knee_angle = self._smooth_metric(self._knee_history, raw_knee_angle)
+        ankle_angle = self._maybe_smooth_angle(
+            self._ankle_history,
+            self._angle_if_visible(landmarks, 25, 27, 31),
+            self._angle_if_visible(landmarks, 26, 28, 32),
         )
-        ankle_angle = self._average_angle(
-            [
-                self._angle_if_visible(landmarks, 25, 27, 31),
-                self._angle_if_visible(landmarks, 26, 28, 32),
-            ]
-        )
-        torso_angle = self._average_angle(
-            [
-                self._torso_angle_if_visible(landmarks, 11, 23),
-                self._torso_angle_if_visible(landmarks, 12, 24),
-            ]
+        torso_angle = self._maybe_smooth_angle(
+            self._torso_history,
+            self._torso_angle_if_visible(landmarks, 11, 23),
+            self._torso_angle_if_visible(landmarks, 12, 24),
         )
 
-        if knee_angle is None:
-            return SquatState(
-                label="no_pose",
-                knee_angle=None,
-                ankle_angle=ankle_angle,
-                torso_angle=torso_angle,
-            )
-
+        self._missing_pose_frames = 0
         if knee_angle <= SQUAT_CONFIG.down_knee_angle:
             label = "down"
         elif knee_angle >= SQUAT_CONFIG.up_knee_angle:
@@ -72,6 +71,7 @@ class SquatStateAnalyzer:
             knee_angle=knee_angle,
             ankle_angle=ankle_angle,
             torso_angle=torso_angle,
+            pose_visible=True,
         )
 
     def _angle_if_visible(
@@ -108,21 +108,37 @@ class SquatStateAnalyzer:
 
         return math.degrees(math.atan2(abs(dx), vertical_span))
 
+    def _maybe_smooth_angle(
+        self,
+        history: Deque[float],
+        first_value: Optional[float],
+        second_value: Optional[float],
+    ) -> Optional[float]:
+        values = [value for value in (first_value, second_value) if value is not None]
+        if not values:
+            return None
+        return self._smooth_metric(history, sum(values) / len(values))
+
+    def _smooth_metric(self, history: Deque[float], value: float) -> float:
+        history.append(value)
+        return sum(history) / len(history)
+
+    def _mark_missing_pose(self) -> None:
+        self._missing_pose_frames += 1
+        if self._missing_pose_frames >= SQUAT_CONFIG.no_pose_reset_frames:
+            self._knee_history.clear()
+            self._ankle_history.clear()
+            self._torso_history.clear()
+
     @staticmethod
     def _landmarks_visible(landmarks, *indices: int) -> bool:
         visibilities = [getattr(landmarks[index], "visibility", 1.0) for index in indices]
-        return min(visibilities) >= 0.5
+        return min(visibilities) >= SQUAT_CONFIG.landmark_visibility_threshold
 
-    @staticmethod
-    def _average_angle(values: Iterable[Optional[float]]) -> Optional[float]:
-        valid = [v for v in values if v is not None]
-        if not valid:
-            return None
-        return sum(valid) / len(valid)
 
 
 def _angle_degrees(a, b, c) -> float:
-    """Return angle at point b (in degrees) for triangle a-b-c using 2D coords."""
+    """Return the angle at point b (in degrees) for triangle a-b-c."""
     ba = (a[0] - b[0], a[1] - b[1])
     bc = (c[0] - b[0], c[1] - b[1])
 
@@ -142,89 +158,157 @@ class RepCounterUpdate:
     rep_completed: bool = False
     is_bad: bool = False
     reason: str = ""
+    issues: tuple[str, ...] = ()
     min_knee_angle: Optional[float] = None
+    min_ankle_angle: Optional[float] = None
+    max_torso_angle: Optional[float] = None
 
 
 class SquatRepCounter:
-    """Track squat reps separately from depth quality checks."""
+    """Track squat reps while keeping quality checks rule-based and separate."""
 
     def __init__(self) -> None:
         self.rep_count = 0
         self.bad_rep_count = 0
         self.last_rep_result = "none"
         self._bottom_frames = 0
+        self._standing_frames = 0
+        self._missing_pose_frames = 0
         self._in_rep = False
         self._ready_for_rep = False
         self._rep_start_time = 0.0
         self._min_knee_angle: Optional[float] = None
+        self._min_ankle_angle: Optional[float] = None
+        self._max_torso_angle: Optional[float] = None
 
     def update(self, squat_state: SquatState, timestamp: float) -> RepCounterUpdate:
-        if squat_state.label == "no_pose":
-            self._bottom_frames = 0
-            return RepCounterUpdate()
+        if squat_state.label == "no_pose" or not squat_state.pose_visible:
+            return self._handle_missing_pose()
 
         angle = squat_state.knee_angle
         if angle is None:
-            self._bottom_frames = 0
-            return RepCounterUpdate()
+            return self._handle_missing_pose()
 
-        if self._in_rep:
-            self._update_min_knee_angle(angle)
-            if timestamp - self._rep_start_time >= SQUAT_CONFIG.min_rep_seconds:
-                if angle >= SQUAT_CONFIG.up_knee_angle:
-                    return self._complete_rep()
-
-            return RepCounterUpdate()
+        self._missing_pose_frames = 0
 
         if angle >= SQUAT_CONFIG.up_knee_angle:
-            self._ready_for_rep = True
-            self._bottom_frames = 0
-            self._min_knee_angle = None
+            self._standing_frames += 1
+            if not self._in_rep and self._standing_frames >= SQUAT_CONFIG.ready_standing_frames:
+                self._ready_for_rep = True
+                self._bottom_frames = 0
+                self._clear_cycle_metrics()
+        else:
+            self._standing_frames = 0
+
+        if self._in_rep:
+            self._update_cycle_metrics(squat_state)
+            if (
+                timestamp - self._rep_start_time >= SQUAT_CONFIG.min_rep_seconds
+                and angle >= SQUAT_CONFIG.up_knee_angle
+            ):
+                return self._complete_rep()
             return RepCounterUpdate()
 
         if not self._ready_for_rep:
             return RepCounterUpdate()
 
+        if angle < SQUAT_CONFIG.up_knee_angle:
+            self._update_cycle_metrics(squat_state)
+
         if angle <= SQUAT_CONFIG.rep_bottom_knee_angle:
             self._bottom_frames += 1
-            self._update_min_knee_angle(angle)
             if self._bottom_frames >= SQUAT_CONFIG.down_hold_frames:
                 self._in_rep = True
                 self._rep_start_time = timestamp
                 return RepCounterUpdate(
                     rep_started=True,
                     min_knee_angle=self._min_knee_angle,
+                    min_ankle_angle=self._min_ankle_angle,
+                    max_torso_angle=self._max_torso_angle,
                 )
-        else:
+        elif angle >= SQUAT_CONFIG.down_knee_angle:
             self._bottom_frames = 0
 
         return RepCounterUpdate()
 
-    def _update_min_knee_angle(self, angle: float) -> None:
-        if self._min_knee_angle is None:
-            self._min_knee_angle = angle
-        else:
-            self._min_knee_angle = min(self._min_knee_angle, angle)
+    def _handle_missing_pose(self) -> RepCounterUpdate:
+        self._bottom_frames = 0
+        self._standing_frames = 0
+        self._missing_pose_frames += 1
+        if self._missing_pose_frames >= SQUAT_CONFIG.no_pose_reset_frames:
+            self._reset_cycle_state()
+        return RepCounterUpdate()
+
+    def _update_cycle_metrics(self, squat_state: SquatState) -> None:
+        knee_angle = squat_state.knee_angle
+        if knee_angle is not None:
+            if self._min_knee_angle is None:
+                self._min_knee_angle = knee_angle
+            else:
+                self._min_knee_angle = min(self._min_knee_angle, knee_angle)
+
+        ankle_angle = squat_state.ankle_angle
+        if ankle_angle is not None:
+            if self._min_ankle_angle is None:
+                self._min_ankle_angle = ankle_angle
+            else:
+                self._min_ankle_angle = min(self._min_ankle_angle, ankle_angle)
+
+        torso_angle = squat_state.torso_angle
+        if torso_angle is not None:
+            if self._max_torso_angle is None:
+                self._max_torso_angle = torso_angle
+            else:
+                self._max_torso_angle = max(self._max_torso_angle, torso_angle)
 
     def _complete_rep(self) -> RepCounterUpdate:
-        min_angle = self._min_knee_angle
-        is_bad = min_angle is None or min_angle > SQUAT_CONFIG.shallow_knee_angle
-        reason = "too_shallow" if is_bad else ""
+        min_knee_angle = self._min_knee_angle
+        min_ankle_angle = self._min_ankle_angle
+        max_torso_angle = self._max_torso_angle
+
+        issues: list[str] = []
+        if min_knee_angle is None or min_knee_angle > SQUAT_CONFIG.shallow_knee_angle:
+            issues.append("too_shallow")
+        if (
+            min_ankle_angle is not None
+            and min_ankle_angle > SQUAT_CONFIG.ankle_control_angle
+        ):
+            issues.append("ankle_control")
+        if (
+            max_torso_angle is not None
+            and max_torso_angle > SQUAT_CONFIG.torso_lean_angle
+        ):
+            issues.append("torso_lean")
+
+        is_bad = "too_shallow" in issues
+        reason = ", ".join(issues)
 
         self.rep_count += 1
         if is_bad:
             self.bad_rep_count += 1
 
-        self.last_rep_result = "too_shallow" if is_bad else "ok"
-        self._bottom_frames = 0
-        self._in_rep = False
-        self._ready_for_rep = True
-        self._rep_start_time = 0.0
-        self._min_knee_angle = None
+        self.last_rep_result = reason if reason else "ok"
+        self._reset_cycle_state(keep_ready=True)
 
         return RepCounterUpdate(
             rep_completed=True,
             is_bad=is_bad,
             reason=reason,
-            min_knee_angle=min_angle,
+            issues=tuple(issues),
+            min_knee_angle=min_knee_angle,
+            min_ankle_angle=min_ankle_angle,
+            max_torso_angle=max_torso_angle,
         )
+
+    def _clear_cycle_metrics(self) -> None:
+        self._min_knee_angle = None
+        self._min_ankle_angle = None
+        self._max_torso_angle = None
+
+    def _reset_cycle_state(self, keep_ready: bool = False) -> None:
+        self._bottom_frames = 0
+        self._standing_frames = 0
+        self._in_rep = False
+        self._ready_for_rep = keep_ready
+        self._rep_start_time = 0.0
+        self._clear_cycle_metrics()
