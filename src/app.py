@@ -1,4 +1,4 @@
-"""GymGuardian MVP app entrypoint."""
+"""GymGuardian squat coach application entrypoint."""
 
 from __future__ import annotations
 
@@ -153,6 +153,18 @@ def _current_feedback(
     return None, "info"
 
 
+def _rep_feedback(issues: tuple[str, ...], is_bad: bool) -> tuple[str, str]:
+    if is_bad and "too_shallow" in issues:
+        return "Bad rep: increase squat depth", "bad"
+    if "torso_lean" in issues and "ankle_control" in issues:
+        return "Rep logged: improve torso and ankle control", "warning"
+    if "torso_lean" in issues:
+        return "Rep logged: reduce forward torso lean", "warning"
+    if "ankle_control" in issues:
+        return "Rep logged: improve ankle control", "warning"
+    return "Rep accepted", "ok"
+
+
 def run_session(overlay: OverlayRenderer) -> None:
     """Run one workout session and persist outputs on exit."""
     cap = cv2.VideoCapture(0)
@@ -203,6 +215,7 @@ def run_session(overlay: OverlayRenderer) -> None:
                         else (0.9 * fps_estimate + 0.1 * instant_fps)
                     )
             previous_frame_time = timestamp
+            summary.add_fps_sample(fps_estimate)
 
             results = detector.process(frame)
             squat_state = analyzer.classify(results)
@@ -219,14 +232,20 @@ def run_session(overlay: OverlayRenderer) -> None:
                 summary.record_rep_start(elapsed)
             if rep_update.rep_completed:
                 summary.record_rep_complete(elapsed, reason=rep_update.reason)
-                if rep_update.reason:
-                    summary.record_issue(rep_update.reason)
-                if rep_update.reason == "too_shallow":
-                    feedback_message = "Bad rep: too shallow"
-                    feedback_level = "bad"
-                else:
-                    feedback_message = "Rep accepted"
-                    feedback_level = "ok"
+                summary.record_completed_rep(
+                    rep_index=rep_counter.rep_count,
+                    timestamp=elapsed,
+                    is_bad=rep_update.is_bad,
+                    issues=rep_update.issues,
+                    min_knee_angle=rep_update.min_knee_angle,
+                    min_ankle_angle=rep_update.min_ankle_angle,
+                    max_torso_angle=rep_update.max_torso_angle,
+                )
+                summary.record_issues(rep_update.issues)
+                feedback_message, feedback_level = _rep_feedback(
+                    rep_update.issues,
+                    rep_update.is_bad,
+                )
                 feedback_until = timestamp + FEEDBACK_HOLD_SECONDS
 
             summary.rep_count = rep_counter.rep_count
@@ -257,11 +276,16 @@ def run_session(overlay: OverlayRenderer) -> None:
                     "fps": fps_estimate,
                     "pose_detected": pose_detected,
                     "knee_angle": squat_state.knee_angle,
+                    "ankle_angle": squat_state.ankle_angle,
+                    "torso_angle": squat_state.torso_angle,
                     "down_knee_angle": SQUAT_CONFIG.down_knee_angle,
                     "up_knee_angle": SQUAT_CONFIG.up_knee_angle,
                     "rep_bottom_knee_angle": SQUAT_CONFIG.rep_bottom_knee_angle,
                     "shallow_knee_angle": SQUAT_CONFIG.shallow_knee_angle,
+                    "ankle_control_angle": SQUAT_CONFIG.ankle_control_angle,
+                    "torso_lean_angle": SQUAT_CONFIG.torso_lean_angle,
                     "down_hold_frames": SQUAT_CONFIG.down_hold_frames,
+                    "ready_standing_frames": SQUAT_CONFIG.ready_standing_frames,
                     "min_rep_seconds": SQUAT_CONFIG.min_rep_seconds,
                 }
                 overlay.draw_debug(frame, debug_info)
@@ -283,6 +307,12 @@ def run_session(overlay: OverlayRenderer) -> None:
         cap.release()
 
         print(f"Session summary saved: {saved_path}")
+        rep_metrics_path = session_dir / "rep_metrics.csv"
+        if rep_metrics_path.exists():
+            print(f"Rep metrics exported: {rep_metrics_path}")
+        session_report_path = session_dir / "session_report.txt"
+        if session_report_path.exists():
+            print(f"Session report exported: {session_report_path}")
         if recorder_started and recorder.output_path.exists():
             print(f"Session video path: {recorder.output_path}")
 
