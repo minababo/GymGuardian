@@ -24,6 +24,20 @@ class OverlayRenderer:
     MUTED = (166, 166, 166)
     SHADOW = (0, 0, 0)
 
+    LIGHT_BG = (238, 241, 244)
+    LIGHT_BG_SOFT = (226, 233, 239)
+    LIGHT_PANEL = (252, 253, 255)
+    LIGHT_PANEL_ALT = (244, 247, 250)
+    LIGHT_SELECTED = (231, 243, 236)
+    LIGHT_BORDER = (204, 213, 222)
+    LIGHT_BORDER_ACTIVE = (86, 150, 102)
+    LIGHT_PRIMARY = (74, 132, 48)
+    LIGHT_WARNING = (0, 141, 213)
+    LIGHT_ERROR = (72, 74, 210)
+    LIGHT_TEXT = (35, 42, 49)
+    LIGHT_MUTED = (93, 104, 116)
+    LIGHT_SHADOW = (255, 255, 255)
+
     def draw(
         self,
         frame_bgr,
@@ -42,8 +56,8 @@ class OverlayRenderer:
     def draw_dashboard(self, frame_bgr) -> None:
         self._fill_background(frame_bgr)
         frame_h, frame_w = frame_bgr.shape[:2]
-        panel_w = min(780, frame_w - 140)
-        panel_h = 450
+        panel_w = min(820, frame_w - 120)
+        panel_h = 430
         panel_x = (frame_w - panel_w) // 2
         panel_y = max(70, (frame_h - panel_h) // 2)
 
@@ -53,8 +67,9 @@ class OverlayRenderer:
             panel_y,
             panel_w,
             panel_h,
-            border_color=self.BORDER_ACTIVE,
-            alpha=0.94,
+            color=self.LIGHT_PANEL,
+            border_color=self.LIGHT_BORDER_ACTIVE,
+            alpha=0.98,
         )
         self._put_text(
             frame_bgr,
@@ -62,7 +77,7 @@ class OverlayRenderer:
             panel_x + 46,
             panel_y + 82,
             scale=1.55,
-            color=self.PRIMARY,
+            color=self.LIGHT_PRIMARY,
             thickness=2,
             max_width=panel_w - 92,
         )
@@ -72,7 +87,7 @@ class OverlayRenderer:
             panel_x + 50,
             panel_y + 126,
             scale=0.66,
-            color=self.MUTED,
+            color=self.LIGHT_MUTED,
             thickness=1,
             max_width=panel_w - 100,
         )
@@ -101,7 +116,7 @@ class OverlayRenderer:
             panel_x + 50,
             panel_y + panel_h - 30,
             scale=0.48,
-            color=self.MUTED,
+            color=self.LIGHT_MUTED,
             thickness=1,
             max_width=panel_w - 100,
         )
@@ -117,7 +132,7 @@ class OverlayRenderer:
             margin,
             58,
             scale=1.18,
-            color=self.PRIMARY,
+            color=self.LIGHT_PRIMARY,
             thickness=2,
         )
         self._put_text(
@@ -126,7 +141,7 @@ class OverlayRenderer:
             margin + 2,
             96,
             scale=0.58,
-            color=self.MUTED,
+            color=self.LIGHT_MUTED,
             thickness=1,
             max_width=frame_w - (margin * 2),
         )
@@ -145,8 +160,9 @@ class OverlayRenderer:
             list_y,
             list_w,
             list_h,
-            border_color=self.BORDER,
-            alpha=0.9,
+            color=self.LIGHT_PANEL,
+            border_color=self.LIGHT_BORDER,
+            alpha=0.98,
         )
 
         if not sessions:
@@ -156,7 +172,7 @@ class OverlayRenderer:
                 list_x + 28,
                 list_y + 74,
                 scale=0.72,
-                color=self.MUTED,
+                color=self.LIGHT_MUTED,
                 thickness=1,
                 max_width=list_w - 56,
             )
@@ -169,7 +185,7 @@ class OverlayRenderer:
             list_x + 28,
             header_y,
             scale=0.56,
-            color=self.MUTED,
+            color=self.LIGHT_MUTED,
             thickness=1,
         )
         self._put_text(
@@ -178,7 +194,7 @@ class OverlayRenderer:
             reps_x,
             header_y,
             scale=0.56,
-            color=self.MUTED,
+            color=self.LIGHT_MUTED,
             thickness=1,
         )
         self._put_text(
@@ -187,14 +203,14 @@ class OverlayRenderer:
             bad_x,
             header_y,
             scale=0.56,
-            color=self.MUTED,
+            color=self.LIGHT_MUTED,
             thickness=1,
         )
         cv2.line(
             frame_bgr,
             (list_x + 22, list_y + 58),
             (list_x + list_w - 22, list_y + 58),
-            self.BORDER,
+            self.LIGHT_BORDER,
             1,
         )
 
@@ -220,12 +236,12 @@ class OverlayRenderer:
                     row_y - 29,
                     list_w - 32,
                     row_h,
-                    color=self.PANEL_ALT,
-                    border_color=self.BORDER_ACTIVE,
-                    alpha=0.96,
+                    color=self.LIGHT_SELECTED,
+                    border_color=self.LIGHT_BORDER_ACTIVE,
+                    alpha=0.98,
                 )
 
-            color = self.TEXT if selected else (205, 205, 205)
+            color = self.LIGHT_TEXT if selected else self.LIGHT_MUTED
             marker = ">" if selected else " "
             self._put_text(
                 frame_bgr,
@@ -253,7 +269,7 @@ class OverlayRenderer:
                 bad_x,
                 row_y,
                 scale=0.66,
-                color=self.ERROR if bad not in ("0", "?") else color,
+                color=self.LIGHT_ERROR if bad not in ("0", "?") else color,
                 thickness=1,
                 max_width=64,
             )
@@ -271,7 +287,7 @@ class OverlayRenderer:
             margin,
             58,
             scale=1.18,
-            color=self.PRIMARY,
+            color=self.LIGHT_PRIMARY,
             thickness=2,
         )
         self._put_text(
@@ -280,7 +296,7 @@ class OverlayRenderer:
             margin + 2,
             96,
             scale=0.58,
-            color=self.MUTED,
+            color=self.LIGHT_MUTED,
             thickness=1,
             max_width=frame_w - (margin * 2),
         )
@@ -302,8 +318,9 @@ class OverlayRenderer:
             summary_y,
             summary_w,
             summary_h,
-            border_color=self.BORDER,
-            alpha=0.9,
+            color=self.LIGHT_PANEL,
+            border_color=self.LIGHT_BORDER,
+            alpha=0.98,
         )
         self._put_text(
             frame_bgr,
@@ -311,7 +328,7 @@ class OverlayRenderer:
             summary_x + 28,
             summary_y + 42,
             scale=0.72,
-            color=self.TEXT,
+            color=self.LIGHT_TEXT,
             thickness=1,
         )
 
@@ -326,7 +343,7 @@ class OverlayRenderer:
                 summary_x + 28,
                 summary_y + 90,
                 scale=0.72,
-                color=self.TEXT,
+                color=self.LIGHT_TEXT,
                 thickness=1,
                 max_width=summary_w - 56,
             )
@@ -340,7 +357,7 @@ class OverlayRenderer:
                 summary_x + 28,
                 summary_y + 122,
                 scale=0.54,
-                color=self.MUTED,
+                color=self.LIGHT_MUTED,
                 thickness=1,
                 max_width=summary_w - 56,
             )
@@ -352,7 +369,7 @@ class OverlayRenderer:
                 68,
                 "Total Saved Sessions",
                 str(snapshot.total_sessions),
-                self.PRIMARY,
+                self.LIGHT_PRIMARY,
             )
             self._draw_metric_tile(
                 frame_bgr,
@@ -362,7 +379,7 @@ class OverlayRenderer:
                 68,
                 "Meaningful Sessions",
                 str(snapshot.meaningful_session_count),
-                self.TEXT,
+                self.LIGHT_TEXT,
             )
             return
 
@@ -373,7 +390,7 @@ class OverlayRenderer:
             summary_x + 28,
             summary_y + 82,
             scale=0.62,
-            color=self.MUTED,
+            color=self.LIGHT_MUTED,
             thickness=1,
             max_width=summary_w - 56,
         )
@@ -383,7 +400,7 @@ class OverlayRenderer:
             summary_x + 28,
             summary_y + 108,
             scale=0.58,
-            color=self.MUTED,
+            color=self.LIGHT_MUTED,
             thickness=1,
             max_width=summary_w - 56,
         )
@@ -404,7 +421,7 @@ class OverlayRenderer:
             card_h,
             "Total Saved Sessions",
             str(snapshot.total_sessions),
-            self.PRIMARY,
+            self.LIGHT_PRIMARY,
         )
         self._draw_metric_tile(
             frame_bgr,
@@ -414,7 +431,7 @@ class OverlayRenderer:
             card_h,
             "Meaningful Sessions",
             str(snapshot.meaningful_session_count),
-            self.TEXT,
+            self.LIGHT_TEXT,
         )
         self._draw_metric_tile(
             frame_bgr,
@@ -424,7 +441,7 @@ class OverlayRenderer:
             card_h,
             "Latest Reps",
             self._format_metric_value(snapshot.latest_rep_count),
-            self.TEXT,
+            self.LIGHT_TEXT,
         )
         self._draw_metric_tile(
             frame_bgr,
@@ -434,7 +451,11 @@ class OverlayRenderer:
             card_h,
             "Latest Bad Reps",
             self._format_metric_value(snapshot.latest_bad_rep_count),
-            self.ERROR if (snapshot.latest_bad_rep_count or 0) > 0 else self.TEXT,
+            (
+                self.LIGHT_ERROR
+                if (snapshot.latest_bad_rep_count or 0) > 0
+                else self.LIGHT_TEXT
+            ),
         )
 
         second_row_y = cards_y + card_h + cards_gap
@@ -446,7 +467,11 @@ class OverlayRenderer:
             card_h,
             "Bad Rep Rate",
             self._format_percentage(snapshot.latest_bad_rep_percentage),
-            self.WARNING if (snapshot.latest_bad_rep_percentage or 0.0) > 0 else self.TEXT,
+            (
+                self.LIGHT_WARNING
+                if (snapshot.latest_bad_rep_percentage or 0.0) > 0
+                else self.LIGHT_TEXT
+            ),
         )
         self._draw_metric_tile(
             frame_bgr,
@@ -456,7 +481,7 @@ class OverlayRenderer:
             card_h,
             "Avg Knee Angle",
             self._format_angle(snapshot.latest_avg_knee_angle),
-            self.TEXT,
+            self.LIGHT_TEXT,
         )
         self._draw_metric_tile(
             frame_bgr,
@@ -466,7 +491,7 @@ class OverlayRenderer:
             card_h,
             "Min Knee Angle",
             self._format_angle(snapshot.latest_min_knee_angle),
-            self.TEXT,
+            self.LIGHT_TEXT,
         )
         self._draw_metric_tile(
             frame_bgr,
@@ -476,7 +501,7 @@ class OverlayRenderer:
             card_h,
             "Avg Ankle Angle",
             self._format_angle(snapshot.latest_avg_ankle_angle),
-            self.TEXT,
+            self.LIGHT_TEXT,
         )
 
         third_row_y = second_row_y + card_h + cards_gap
@@ -488,7 +513,7 @@ class OverlayRenderer:
             issue_h,
             "Avg Torso Lean",
             self._format_angle(snapshot.latest_avg_torso_angle),
-            self.TEXT,
+            self.LIGHT_TEXT,
             value_scale=0.62 if compact_layout else 0.68,
         )
         self._draw_metric_tile(
@@ -499,7 +524,7 @@ class OverlayRenderer:
             issue_h,
             "Most Common Issue",
             self._format_issue(snapshot.latest_most_common_issue),
-            self.TEXT,
+            self.LIGHT_TEXT,
             value_scale=0.62 if compact_layout else 0.68,
         )
 
@@ -520,8 +545,9 @@ class OverlayRenderer:
             lower_y,
             progress_w,
             lower_h,
-            border_color=self.BORDER,
-            alpha=0.9,
+            color=self.LIGHT_PANEL,
+            border_color=self.LIGHT_BORDER,
+            alpha=0.98,
         )
         self._put_text(
             frame_bgr,
@@ -529,7 +555,7 @@ class OverlayRenderer:
             progress_x + 28,
             lower_y + 38,
             scale=0.72,
-            color=self.TEXT,
+            color=self.LIGHT_TEXT,
             thickness=1,
         )
         self._put_text(
@@ -538,7 +564,7 @@ class OverlayRenderer:
             progress_x + 28,
             lower_y + (62 if compact_layout else 70),
             scale=0.58,
-            color=self.MUTED,
+            color=self.LIGHT_MUTED,
             thickness=1,
             max_width=progress_w - 56,
         )
@@ -548,7 +574,7 @@ class OverlayRenderer:
             progress_x + 28,
             lower_y + (86 if compact_layout else 96),
             scale=0.6,
-            color=self.MUTED,
+            color=self.LIGHT_MUTED,
             thickness=1,
             max_width=progress_w - 56,
         )
@@ -577,7 +603,9 @@ class OverlayRenderer:
             delta_card_h,
             "Bad Rep Rate Change",
             self._format_percentage_point_change(snapshot.bad_rep_percentage_change),
-            self._change_color(snapshot.bad_rep_percentage_change, positive_is_good=False),
+            self._change_color(
+                snapshot.bad_rep_percentage_change, positive_is_good=False
+            ),
             label_scale=0.40,
             value_scale=0.54 if compact_layout else 0.64,
         )
@@ -589,7 +617,7 @@ class OverlayRenderer:
             delta_card_h,
             "Avg Knee Angle Change",
             self._format_angle_change(snapshot.avg_knee_angle_change),
-            self.TEXT,
+            self.LIGHT_TEXT,
             label_scale=0.40,
             value_scale=0.54 if compact_layout else 0.64,
         )
@@ -600,8 +628,9 @@ class OverlayRenderer:
             lower_y,
             report_w,
             lower_h,
-            border_color=self.BORDER,
-            alpha=0.9,
+            color=self.LIGHT_PANEL,
+            border_color=self.LIGHT_BORDER_ACTIVE,
+            alpha=0.98,
         )
         self._put_text(
             frame_bgr,
@@ -609,7 +638,7 @@ class OverlayRenderer:
             report_x + 28,
             lower_y + 38,
             scale=0.72,
-            color=self.TEXT,
+            color=self.LIGHT_TEXT,
             thickness=1,
         )
         report_gap = 40 if compact_layout else 46
@@ -621,7 +650,7 @@ class OverlayRenderer:
             report_w - 56,
             "Main concern",
             snapshot.main_concern or "N/A",
-            self.TEXT,
+            self.LIGHT_TEXT,
         )
         self._draw_report_item(
             frame_bgr,
@@ -630,7 +659,7 @@ class OverlayRenderer:
             report_w - 56,
             "Suggested improvement",
             snapshot.suggested_improvement or "N/A",
-            self.MUTED,
+            self.LIGHT_MUTED,
         )
         self._draw_report_item(
             frame_bgr,
@@ -639,7 +668,7 @@ class OverlayRenderer:
             report_w - 56,
             "Focus area for next session",
             snapshot.focus_area or "N/A",
-            self.PRIMARY,
+            self.LIGHT_PRIMARY,
         )
 
     def draw_debug(self, frame_bgr, debug_info: dict) -> None:
@@ -863,9 +892,9 @@ class OverlayRenderer:
             y,
             width,
             height,
-            color=self.PANEL_ALT,
-            border_color=self.BORDER,
-            alpha=0.94,
+            color=self.LIGHT_PANEL_ALT,
+            border_color=self.LIGHT_BORDER,
+            alpha=0.98,
         )
         self._put_text(
             frame_bgr,
@@ -873,7 +902,7 @@ class OverlayRenderer:
             x + 16,
             label_y,
             scale=label_scale,
-            color=self.MUTED,
+            color=self.LIGHT_MUTED,
             thickness=1,
             max_width=width - 32,
         )
@@ -904,7 +933,7 @@ class OverlayRenderer:
             x,
             y,
             scale=0.5,
-            color=self.MUTED,
+            color=self.LIGHT_MUTED,
             thickness=1,
             max_width=width,
         )
@@ -979,22 +1008,22 @@ class OverlayRenderer:
             y - 32,
             width,
             row_h,
-            color=self.PANEL_ALT,
-            border_color=self.BORDER,
-            alpha=0.94,
+            color=self.LIGHT_PANEL_ALT,
+            border_color=self.LIGHT_BORDER,
+            alpha=0.98,
         )
         cv2.rectangle(
             frame_bgr,
             (key_box_x, y - 24),
             (key_box_x + key_box_w, y + 10),
-            self.BG_SOFT,
+            self.LIGHT_BG_SOFT,
             -1,
         )
         cv2.rectangle(
             frame_bgr,
             (key_box_x, y - 24),
             (key_box_x + key_box_w, y + 10),
-            self.PRIMARY,
+            self.LIGHT_PRIMARY,
             1,
         )
         self._put_text(
@@ -1003,7 +1032,7 @@ class OverlayRenderer:
             key_box_x + ((key_box_w - key_width) // 2),
             y,
             scale=key_scale,
-            color=self.PRIMARY,
+            color=self.LIGHT_PRIMARY,
             thickness=key_thickness,
             max_width=key_box_w - 12,
         )
@@ -1013,18 +1042,18 @@ class OverlayRenderer:
             key_box_x + key_box_w + 22,
             y,
             scale=0.68,
-            color=self.TEXT,
+            color=self.LIGHT_TEXT,
             thickness=1,
             max_width=width - key_box_w - 58,
         )
 
     def _fill_background(self, frame_bgr) -> None:
-        frame_bgr[:] = self.BG
+        frame_bgr[:] = self.LIGHT_BG
         frame_h, frame_w = frame_bgr.shape[:2]
-        cv2.rectangle(frame_bgr, (0, 0), (frame_w, 112), self.BG_SOFT, -1)
-        cv2.line(frame_bgr, (0, 112), (frame_w, 112), self.BORDER, 1)
-        cv2.circle(frame_bgr, (frame_w - 100, 80), 150, (20, 32, 24), -1)
-        cv2.circle(frame_bgr, (70, frame_h - 70), 130, (24, 24, 24), -1)
+        cv2.rectangle(frame_bgr, (0, 0), (frame_w, 112), self.LIGHT_BG_SOFT, -1)
+        cv2.line(frame_bgr, (0, 112), (frame_w, 112), self.LIGHT_BORDER, 1)
+        cv2.circle(frame_bgr, (frame_w - 96, 86), 142, (210, 230, 218), -1)
+        cv2.circle(frame_bgr, (72, frame_h - 64), 128, (232, 236, 240), -1)
 
     def _draw_panel(
         self,
@@ -1063,7 +1092,7 @@ class OverlayRenderer:
             (x + 1, y + 1),
             self.FONT,
             scale,
-            self.SHADOW,
+            self.LIGHT_SHADOW if sum(color) < 360 else self.SHADOW,
             thickness + 1,
             cv2.LINE_AA,
         )
@@ -1158,10 +1187,10 @@ class OverlayRenderer:
         self, value: int | float | None, *, positive_is_good: bool
     ) -> tuple[int, int, int]:
         if value is None or value == 0:
-            return self.TEXT
+            return self.LIGHT_TEXT
         if positive_is_good:
-            return self.PRIMARY if value > 0 else self.WARNING
-        return self.PRIMARY if value < 0 else self.ERROR
+            return self.LIGHT_PRIMARY if value > 0 else self.LIGHT_WARNING
+        return self.LIGHT_PRIMARY if value < 0 else self.LIGHT_ERROR
 
     @staticmethod
     def _format_session_timestamp(value: str | None) -> str:
