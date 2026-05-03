@@ -60,7 +60,7 @@ class OverlayRenderer:
             feedback_level,
         )
 
-    def draw_dashboard(self, frame_bgr) -> None:
+    def draw_dashboard(self, frame_bgr, calibration_profile=None) -> None:
         self._fill_background(frame_bgr)
         frame_h, frame_w = frame_bgr.shape[:2]
 
@@ -130,22 +130,23 @@ class OverlayRenderer:
             insight_x + insight_w + insight_gap,
             insight_y,
             insight_w,
-            "Processing",
-            "Local webcam pipeline",
+            "Calibration",
+            "Adaptive thresholds" if calibration_profile else "Default thresholds",
         )
 
         options = [
             ("S", "Start squat session", "Open webcam and begin form tracking"),
+            ("C", "Calibrate squat depth", "Personalise thresholds with 2-3 squats"),
             ("A", "Open analytics dashboard", "View progress and recommendations"),
             ("B", "Browse saved sessions", "Review videos and session files"),
             ("Esc", "Quit application", "Close GymGuardian"),
         ]
 
-        card_gap = 18
+        card_gap = 14
         cards_x = shell_x + 58
-        cards_y = shell_y + 246
+        cards_y = shell_y + 236
         card_w = (shell_w - 116 - card_gap) // 2
-        card_h = 84
+        card_h = 70
         for index, (key, title, subtitle) in enumerate(options):
             col = index % 2
             row = index // 2
@@ -506,6 +507,155 @@ class OverlayRenderer:
             report_w,
             lower_h,
             snapshot,
+        )
+
+    def draw_calibration(self, frame_bgr, results, squat_state, status: dict) -> None:
+        if results is not None:
+            self._draw_pose_points(frame_bgr, results)
+        elif frame_bgr.mean() < 5:
+            self._fill_background(frame_bgr)
+
+        frame_h, frame_w = frame_bgr.shape[:2]
+        panel_w = min(620, frame_w - 56)
+        panel_h = 330
+        panel_x = 28
+        panel_y = 30
+        phase = status.get("phase", "collecting")
+        profile = status.get("profile")
+        elapsed = float(status.get("elapsed", 0.0))
+        duration = float(status.get("duration", 1.0))
+        progress = min(1.0, elapsed / max(1.0, duration))
+
+        self._draw_panel(
+            frame_bgr,
+            panel_x,
+            panel_y,
+            panel_w,
+            panel_h,
+            color=self.LIVE_PANEL,
+            border_color=self.LIVE_BORDER,
+            alpha=0.88,
+            radius=20,
+        )
+
+        self._put_text(
+            frame_bgr,
+            "Squat Depth Calibration",
+            panel_x + 24,
+            panel_y + 42,
+            0.72,
+            self.LIVE_TEXT,
+            2,
+            max_width=panel_w - 48,
+        )
+        self._put_text(
+            frame_bgr,
+            "Perform 2-3 normal squats. Keep your lower body visible.",
+            panel_x + 24,
+            panel_y + 72,
+            0.42,
+            self.LIVE_MUTED,
+            max_width=panel_w - 48,
+        )
+
+        bar_x = panel_x + 24
+        bar_y = panel_y + 96
+        bar_w = panel_w - 48
+        self._draw_panel(
+            frame_bgr,
+            bar_x,
+            bar_y,
+            bar_w,
+            16,
+            color=self.LIVE_CARD,
+            border_color=(78, 94, 98),
+            alpha=0.88,
+            radius=8,
+        )
+        fill_w = int(bar_w * progress) if phase == "collecting" else bar_w
+        if fill_w > 0:
+            self._draw_rounded_rect(
+                frame_bgr,
+                bar_x,
+                bar_y,
+                fill_w,
+                16,
+                8,
+                self.LIVE_BORDER if phase == "saved" else self.WARNING,
+                -1,
+            )
+
+        sample_text = f"Valid knee-angle samples: {status.get('sample_count', 0)}"
+        current_angle = "Current knee: N/A"
+        if squat_state is not None and squat_state.knee_angle is not None:
+            current_angle = f"Current knee: {squat_state.knee_angle:.1f} deg"
+        self._put_text(frame_bgr, sample_text, panel_x + 24, panel_y + 142, 0.46, self.LIVE_TEXT)
+        self._put_text(frame_bgr, current_angle, panel_x + 310, panel_y + 142, 0.46, self.LIVE_TEXT)
+
+        phase_label = {
+            "collecting": "Collecting movement range",
+            "saved": "Calibration saved",
+            "failed": "Calibration needs retry",
+            "reset": "Calibration reset",
+            "error": "Calibration unavailable",
+        }.get(phase, phase.title())
+        phase_color = self.LIVE_BORDER if phase == "saved" else self.WARNING
+        if phase in ("failed", "error"):
+            phase_color = self.ERROR
+        self._put_text(frame_bgr, phase_label, panel_x + 24, panel_y + 176, 0.56, phase_color, 2)
+        self._put_text(
+            frame_bgr,
+            status.get("message", ""),
+            panel_x + 24,
+            panel_y + 204,
+            0.4,
+            self.LIVE_MUTED,
+            max_width=panel_w - 48,
+        )
+
+        values_y = panel_y + 238
+        if profile is not None:
+            values = [
+                ("Standing", profile.standing_knee_angle),
+                ("Lowest", profile.lowest_knee_angle),
+                ("Down", profile.calibrated_down_angle),
+                ("Shallow", profile.calibrated_shallow_angle),
+            ]
+            card_w = (panel_w - 48 - 24) // 4
+            for index, (label, value) in enumerate(values):
+                x = panel_x + 24 + (card_w + 8) * index
+                self._draw_panel(
+                    frame_bgr,
+                    x,
+                    values_y,
+                    card_w,
+                    48,
+                    color=self.LIVE_CARD,
+                    border_color=(78, 94, 98),
+                    alpha=0.9,
+                    radius=10,
+                )
+                self._put_text(frame_bgr, label, x + 10, values_y + 18, 0.32, self.LIVE_MUTED)
+                self._put_text(frame_bgr, f"{value:.1f}", x + 10, values_y + 40, 0.48, self.LIVE_TEXT, 2)
+        else:
+            self._put_text(
+                frame_bgr,
+                "No saved calibration yet. Defaults are used until calibration succeeds.",
+                panel_x + 24,
+                values_y + 28,
+                0.4,
+                self.LIVE_MUTED,
+                max_width=panel_w - 48,
+            )
+
+        self._put_text(
+            frame_bgr,
+            "R reset/retry   |   Esc dashboard",
+            panel_x + 24,
+            panel_y + panel_h - 22,
+            0.38,
+            self.LIVE_MUTED,
+            max_width=panel_w - 48,
         )
 
     def draw_debug(self, frame_bgr, debug_info: dict) -> None:

@@ -29,3 +29,4 @@ data/*.avi
 assets/models/*.task
 
 sessions/
+user_data/
