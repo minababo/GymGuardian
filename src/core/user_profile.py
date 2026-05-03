@@ -13,6 +13,7 @@ from core.paths import PROJECT_ROOT
 
 PROFILE_DIR = PROJECT_ROOT / "user_data"
 CALIBRATION_FILE = PROFILE_DIR / "calibration.json"
+SETTINGS_FILE = PROFILE_DIR / "settings.json"
 
 
 @dataclass(frozen=True)
@@ -34,6 +35,12 @@ class CalibrationProfile:
             rep_bottom_knee_angle=self.calibrated_rep_bottom_angle,
             up_knee_angle=self.calibrated_up_angle,
         )
+
+
+@dataclass(frozen=True)
+class AppSettings:
+    theme: str = "light"
+    hide_incomplete_sessions: bool = False
 
 
 def load_calibration_profile() -> CalibrationProfile | None:
@@ -70,6 +77,50 @@ def reset_calibration_profile() -> None:
         CALIBRATION_FILE.unlink()
     except FileNotFoundError:
         return
+
+
+def load_app_settings() -> AppSettings:
+    if not SETTINGS_FILE.exists():
+        return AppSettings()
+
+    try:
+        data = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
+        theme = str(data.get("theme", "light")).lower()
+        if theme not in ("light", "dark"):
+            theme = "light"
+        return AppSettings(
+            theme=theme,
+            hide_incomplete_sessions=bool(data.get("hide_incomplete_sessions", False)),
+        )
+    except (OSError, TypeError, ValueError, json.JSONDecodeError):
+        return AppSettings()
+
+
+def save_app_settings(settings: AppSettings) -> AppSettings:
+    PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+    normalized = AppSettings(
+        theme=settings.theme if settings.theme in ("light", "dark") else "light",
+        hide_incomplete_sessions=bool(settings.hide_incomplete_sessions),
+    )
+    SETTINGS_FILE.write_text(
+        json.dumps(asdict(normalized), indent=2),
+        encoding="utf-8",
+    )
+    return normalized
+
+
+def toggle_theme(settings: AppSettings) -> AppSettings:
+    next_theme = "dark" if settings.theme == "light" else "light"
+    return save_app_settings(replace(settings, theme=next_theme))
+
+
+def toggle_hide_incomplete_sessions(settings: AppSettings) -> AppSettings:
+    return save_app_settings(
+        replace(
+            settings,
+            hide_incomplete_sessions=not settings.hide_incomplete_sessions,
+        )
+    )
 
 
 def load_squat_config() -> SquatConfig:

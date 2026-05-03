@@ -42,6 +42,65 @@ class OverlayRenderer:
     LIVE_MUTED = (178, 194, 190)
     SHADOW = (0, 0, 0)
 
+    THEMES = {
+        "light": {
+            "BG": BG,
+            "BG_SOFT": BG_SOFT,
+            "PANEL": PANEL,
+            "PANEL_ALT": PANEL_ALT,
+            "PANEL_STRONG": PANEL_STRONG,
+            "SELECTED": SELECTED,
+            "BORDER": BORDER,
+            "BORDER_ACTIVE": BORDER_ACTIVE,
+            "PRIMARY": PRIMARY,
+            "PRIMARY_SOFT": PRIMARY_SOFT,
+            "WARNING": WARNING,
+            "ERROR": ERROR,
+            "INFO": INFO,
+            "TEXT": TEXT,
+            "MUTED": MUTED,
+            "MUTED_DARK": MUTED_DARK,
+            "LIVE_PANEL": LIVE_PANEL,
+            "LIVE_CARD": LIVE_CARD,
+            "LIVE_BORDER": LIVE_BORDER,
+            "LIVE_TEXT": LIVE_TEXT,
+            "LIVE_MUTED": LIVE_MUTED,
+        },
+        "dark": {
+            "BG": (39, 24, 17),
+            "BG_SOFT": (47, 35, 24),
+            "PANEL": (53, 45, 36),
+            "PANEL_ALT": (63, 54, 43),
+            "PANEL_STRONG": (74, 64, 50),
+            "SELECTED": (82, 91, 33),
+            "BORDER": (82, 67, 51),
+            "BORDER_ACTIVE": (150, 222, 104),
+            "PRIMARY": (155, 226, 100),
+            "PRIMARY_SOFT": (69, 90, 30),
+            "WARNING": (66, 185, 245),
+            "ERROR": (113, 113, 248),
+            "INFO": (250, 165, 96),
+            "TEXT": (252, 250, 248),
+            "MUTED": (184, 163, 148),
+            "MUTED_DARK": (123, 120, 108),
+            "LIVE_PANEL": (47, 35, 24),
+            "LIVE_CARD": (53, 45, 36),
+            "LIVE_BORDER": (150, 222, 104),
+            "LIVE_TEXT": (252, 250, 248),
+            "LIVE_MUTED": (184, 163, 148),
+        },
+    }
+
+    def __init__(self, theme: str = "light") -> None:
+        self.theme = "light"
+        self.set_theme(theme)
+
+    def set_theme(self, theme: str) -> None:
+        selected_theme = theme if theme in self.THEMES else "light"
+        for key, value in self.THEMES[selected_theme].items():
+            setattr(self, key, value)
+        self.theme = selected_theme
+
     def draw(
         self,
         frame_bgr,
@@ -50,6 +109,7 @@ class OverlayRenderer:
         rep_counter=None,
         feedback_message: str | None = None,
         feedback_level: str = "info",
+        calibration_profile=None,
     ) -> None:
         self._draw_pose_points(frame_bgr, results)
         self._draw_session_panel(
@@ -58,6 +118,7 @@ class OverlayRenderer:
             rep_counter,
             feedback_message,
             feedback_level,
+            calibration_profile,
         )
 
     def draw_dashboard(self, frame_bgr, calibration_profile=None) -> None:
@@ -91,7 +152,7 @@ class OverlayRenderer:
         self._draw_pill(
             frame_bgr,
             shell_x + 58,
-            shell_y + 46,
+            shell_y + 42,
             "Desktop squat coach",
             self.PRIMARY,
             self.SELECTED,
@@ -101,7 +162,7 @@ class OverlayRenderer:
             frame_bgr,
             "GymGuardian",
             shell_x + 58,
-            shell_y + 126,
+            shell_y + 150,
             scale=1.7,
             color=self.PRIMARY,
             thickness=2,
@@ -111,8 +172,8 @@ class OverlayRenderer:
             frame_bgr,
             "Real-time form feedback, local session evidence, and progress analytics.",
             shell_x + 62,
-            shell_y + 172,
-            scale=0.58,
+            shell_y + 198,
+            scale=0.62,
             color=self.MUTED,
             thickness=1,
             max_width=shell_w - 124,
@@ -121,7 +182,7 @@ class OverlayRenderer:
         insight_w = 250
         insight_gap = 14
         insight_x = shell_x + shell_w - (insight_w * 2) - insight_gap - 48
-        insight_y = shell_y + 50
+        insight_y = shell_y + 58
         self._draw_info_card(
             frame_bgr, insight_x, insight_y, insight_w, "Scope", "Squat analysis only"
         )
@@ -139,14 +200,15 @@ class OverlayRenderer:
             ("C", "Calibrate squat depth", "Personalise thresholds with 2-3 squats"),
             ("A", "Open analytics dashboard", "View progress and recommendations"),
             ("B", "Browse saved sessions", "Review videos and session files"),
+            ("G", "Open settings", "Theme, calibration, and browser display"),
             ("Esc", "Quit application", "Close GymGuardian"),
         ]
 
         card_gap = 14
         cards_x = shell_x + 58
-        cards_y = shell_y + 236
+        cards_y = shell_y + 238
         card_w = (shell_w - 116 - card_gap) // 2
-        card_h = 70
+        card_h = 76
         for index, (key, title, subtitle) in enumerate(options):
             col = index % 2
             row = index // 2
@@ -172,7 +234,13 @@ class OverlayRenderer:
             max_width=shell_w - 124,
         )
 
-    def draw_browser(self, frame_bgr, sessions, selected_index: int) -> None:
+    def draw_browser(
+        self,
+        frame_bgr,
+        sessions,
+        selected_index: int,
+        hide_incomplete_sessions: bool = False,
+    ) -> None:
         self._fill_background(frame_bgr)
         frame_h, frame_w = frame_bgr.shape[:2]
         margin = 34
@@ -181,7 +249,7 @@ class OverlayRenderer:
             frame_bgr,
             margin,
             "Session Browser",
-            "Up/Down select  |  P play video  |  O open folder  |  Esc dashboard",
+            "Up/Down select  |  P play video  |  O open folder  |  H hide/show incomplete  |  Esc dashboard",
         )
 
         list_x = margin
@@ -212,8 +280,16 @@ class OverlayRenderer:
                 list_x,
                 list_y,
                 list_w,
-                "No saved sessions found",
-                "Complete a workout session to populate this browser.",
+                (
+                    "No complete sessions shown"
+                    if hide_incomplete_sessions
+                    else "No saved sessions found"
+                ),
+                (
+                    "Press H to show incomplete sessions again."
+                    if hide_incomplete_sessions
+                    else "Complete a workout session to populate this browser."
+                ),
             )
             return
 
@@ -254,20 +330,61 @@ class OverlayRenderer:
                 getattr(item, "valid_session", item.rep_count not in (None, 0))
             )
             status_text = "Complete" if is_valid else "Incomplete"
-            row_color = (
-                self.SELECTED
-                if selected
-                else (235, 246, 238)
-                if is_valid
-                else (246, 249, 247)
+            display_name = (
+                str(item.folder_name)
+                .replace(" (incomplete)", "")
+                .replace("(incomplete)", "")
+                .strip()
             )
-            border_color = (
-                self.BORDER_ACTIVE
-                if selected
-                else (142, 186, 151)
-                if is_valid
-                else self.BORDER
-            )
+            selected_fill = (82, 91, 33)
+            selected_border = (150, 222, 104)
+            selected_text = (252, 250, 248)
+            complete_status_fill = (43, 58, 24)
+            complete_status_border = (73, 110, 44)
+            complete_status_text = (155, 226, 100)
+            incomplete_status_fill = (29, 51, 60)
+            incomplete_status_border = (38, 90, 103)
+            incomplete_status_text = (66, 185, 245)
+
+            if self.theme == "dark":
+                row_color = (
+                    selected_fill
+                    if selected
+                    else (96, 90, 61)
+                    if is_valid
+                    else self.PANEL_ALT
+                )
+                border_color = (
+                    selected_border
+                    if selected
+                    else (120, 140, 77)
+                    if is_valid
+                    else self.BORDER
+                )
+                primary_color = selected_text if selected or is_valid else self.MUTED
+                metric_color = selected_text if selected or is_valid else self.MUTED
+            else:
+                row_color = (
+                    selected_fill
+                    if selected
+                    else (235, 246, 238)
+                    if is_valid
+                    else (246, 249, 247)
+                )
+                border_color = (
+                    selected_border
+                    if selected
+                    else (142, 186, 151)
+                    if is_valid
+                    else self.BORDER
+                )
+                primary_color = selected_text if selected else self.TEXT if is_valid else self.MUTED
+                metric_color = selected_text if selected else self.TEXT if is_valid else self.MUTED
+
+            selected_rail_color = selected_border
+            status_fill = complete_status_fill if is_valid else incomplete_status_fill
+            status_border = complete_status_border if is_valid else incomplete_status_border
+            status_color = complete_status_text if is_valid else incomplete_status_text
 
             self._draw_panel(
                 frame_bgr,
@@ -284,16 +401,13 @@ class OverlayRenderer:
                     frame_bgr,
                     (list_x + 30, row_y - 22),
                     (list_x + 30, row_y + 8),
-                    self.PRIMARY,
+                    selected_rail_color,
                     5,
                 )
 
-            primary_color = self.TEXT if selected or is_valid else self.MUTED_DARK
-            metric_color = self.TEXT if selected or is_valid else self.MUTED
-            status_color = self.PRIMARY if is_valid else self.INFO
             self._put_text(
                 frame_bgr,
-                item.folder_name,
+                display_name,
                 list_x + 34,
                 row_y,
                 scale=0.62,
@@ -327,8 +441,8 @@ class OverlayRenderer:
                 row_y - 25,
                 status_w,
                 28,
-                color=(207, 235, 216) if is_valid else (236, 242, 242),
-                border_color=(86, 158, 101) if is_valid else (166, 176, 174),
+                color=status_fill,
+                border_color=status_border,
                 alpha=0.96,
                 radius=14,
             )
@@ -344,7 +458,7 @@ class OverlayRenderer:
             )
             row_y += 50
 
-    def draw_analytics(self, frame_bgr, snapshot) -> None:
+    def draw_analytics(self, frame_bgr, snapshot, calibration_profile=None) -> None:
         self._fill_background(frame_bgr)
         frame_h, frame_w = frame_bgr.shape[:2]
         margin = 30
@@ -382,6 +496,14 @@ class OverlayRenderer:
             color=self.TEXT,
             thickness=1,
             max_width=summary_w - 52,
+        )
+        self._draw_calibration_badge(
+            frame_bgr,
+            summary_x + summary_w - 242,
+            summary_y + 18,
+            216,
+            32,
+            calibration_profile,
         )
 
         has_meaningful_data = snapshot.meaningful_session_count > 0
@@ -658,6 +780,139 @@ class OverlayRenderer:
             max_width=panel_w - 48,
         )
 
+    def draw_settings(self, frame_bgr, settings, calibration_profile=None) -> None:
+        self._fill_background(frame_bgr)
+        frame_h, frame_w = frame_bgr.shape[:2]
+        margin = 34
+
+        self._draw_screen_header(
+            frame_bgr,
+            margin,
+            "Settings",
+            "T toggle theme  |  H hide/show incomplete  |  R reset calibration  |  Esc dashboard",
+        )
+
+        panel_x = margin
+        panel_y = 132
+        panel_w = frame_w - (margin * 2)
+        panel_h = min(420, frame_h - panel_y - margin)
+        self._draw_panel(
+            frame_bgr,
+            panel_x,
+            panel_y,
+            panel_w,
+            panel_h,
+            color=self.PANEL,
+            border_color=self.BORDER,
+            alpha=0.96,
+            radius=20,
+        )
+
+        self._put_text(
+            frame_bgr,
+            "Application Preferences",
+            panel_x + 28,
+            panel_y + 42,
+            0.76,
+            self.TEXT,
+            2,
+            max_width=panel_w - 56,
+        )
+        self._put_text(
+            frame_bgr,
+            "These settings are local to this device and do not change the squat-analysis model.",
+            panel_x + 28,
+            panel_y + 72,
+            0.46,
+            self.MUTED,
+            max_width=panel_w - 56,
+        )
+
+        card_gap = 16
+        card_y = panel_y + 112
+        card_w = (panel_w - 56 - (card_gap * 2)) // 3
+        theme_value = getattr(settings, "theme", "light").title()
+        browser_value = (
+            "Hiding incomplete"
+            if getattr(settings, "hide_incomplete_sessions", False)
+            else "Showing all sessions"
+        )
+        calibration_value = (
+            "Adaptive thresholds active"
+            if calibration_profile
+            else "Default thresholds active"
+        )
+        cards = [
+            ("Theme", theme_value, "Press T to switch light/dark", self.PRIMARY),
+            ("Session Browser", browser_value, "Press H to toggle visibility", self.TEXT),
+            ("Calibration", calibration_value, "Press R to reset calibration", self.WARNING if calibration_profile else self.MUTED),
+        ]
+
+        for index, (label, value, helper, value_color) in enumerate(cards):
+            x = panel_x + 28 + ((card_w + card_gap) * index)
+            self._draw_panel(
+                frame_bgr,
+                x,
+                card_y,
+                card_w,
+                112,
+                color=self.PANEL_ALT,
+                border_color=self.BORDER,
+                alpha=0.96,
+                radius=16,
+            )
+            self._put_text(frame_bgr, label, x + 18, card_y + 28, 0.44, self.MUTED)
+            self._put_text(
+                frame_bgr,
+                value,
+                x + 18,
+                card_y + 62,
+                0.58,
+                value_color,
+                2 if index == 0 else 1,
+                max_width=card_w - 36,
+            )
+            self._put_text(
+                frame_bgr,
+                helper,
+                x + 18,
+                card_y + 92,
+                0.36,
+                self.MUTED,
+                max_width=card_w - 36,
+            )
+
+        note_y = card_y + 158
+        self._put_text(
+            frame_bgr,
+            "Safety note",
+            panel_x + 28,
+            note_y,
+            0.58,
+            self.TEXT,
+            2,
+            max_width=panel_w - 56,
+        )
+        self._put_text(
+            frame_bgr,
+            "Resetting calibration only removes user-specific thresholds. Session videos, summaries, and analytics are not deleted.",
+            panel_x + 28,
+            note_y + 30,
+            0.44,
+            self.MUTED,
+            max_width=panel_w - 56,
+        )
+
+        self._put_text(
+            frame_bgr,
+            "Esc returns to dashboard.",
+            panel_x + 28,
+            panel_y + panel_h - 28,
+            0.42,
+            self.MUTED,
+            max_width=panel_w - 56,
+        )
+
     def draw_debug(self, frame_bgr, debug_info: dict) -> None:
         lines = [
             "Debug (D to toggle)",
@@ -865,6 +1120,53 @@ class OverlayRenderer:
             self.PRIMARY,
         )
 
+    def _draw_calibration_badge(
+        self,
+        frame_bgr,
+        x: int,
+        y: int,
+        width: int,
+        height: int,
+        calibration_profile=None,
+        *,
+        compact: bool = False,
+        live: bool = False,
+    ) -> None:
+        is_calibrated = calibration_profile is not None
+        text = "Calibrated" if is_calibrated else "Default thresholds"
+
+        if is_calibrated:
+            fill = (43, 58, 24)
+            border = (73, 110, 44)
+            text_color = self.PRIMARY if not live else self.LIVE_BORDER
+        else:
+            fill = self.LIVE_CARD if live else self.PANEL_ALT
+            border = self.BORDER if not live else (78, 94, 98)
+            text_color = self.LIVE_MUTED if live else self.MUTED
+
+        self._draw_panel(
+            frame_bgr,
+            x,
+            y,
+            width,
+            height,
+            color=fill,
+            border_color=border,
+            alpha=0.95 if not live else 0.88,
+            radius=height // 2,
+        )
+        self._put_text_centered(
+            frame_bgr,
+            text,
+            x,
+            y,
+            width,
+            height,
+            0.34 if compact else 0.38,
+            text_color,
+            1,
+        )
+
     def _draw_pose_points(self, frame_bgr, results) -> None:
         if not results or not getattr(results, "pose_landmarks", None):
             return
@@ -885,6 +1187,7 @@ class OverlayRenderer:
         rep_counter=None,
         feedback_message: str | None = None,
         feedback_level: str = "info",
+        calibration_profile=None,
     ) -> None:
         panel_x = 24
         panel_y = 24
@@ -915,6 +1218,16 @@ class OverlayRenderer:
             color=self.LIVE_MUTED,
             thickness=1,
             max_width=panel_w - (pad * 2),
+        )
+        self._draw_calibration_badge(
+            frame_bgr,
+            panel_x + panel_w - 166,
+            panel_y + 16,
+            146,
+            24,
+            calibration_profile,
+            compact=True,
+            live=True,
         )
         self._put_text(
             frame_bgr,
@@ -1193,10 +1506,10 @@ class OverlayRenderer:
         text_color: tuple[int, int, int],
         fill_color: tuple[int, int, int],
     ) -> None:
-        scale = 0.42
+        scale = 0.44
         text_w = self._text_width(text, scale, 1)
         width = text_w + 28
-        height = 28
+        height = 32
         self._draw_panel(
             frame_bgr,
             x,
@@ -1208,8 +1521,8 @@ class OverlayRenderer:
             alpha=0.92,
             radius=14,
         )
-        self._put_text(
-            frame_bgr, text, x + 14, y + 20, scale, text_color, max_width=width - 28
+        self._put_text_centered(
+            frame_bgr, text, x, y, width, height, scale, text_color
         )
 
     def _draw_info_card(
@@ -1259,36 +1572,41 @@ class OverlayRenderer:
             alpha=0.94,
             radius=18,
         )
+        key_box_w = 58 if key != "Esc" else 76
+        key_box_h = 48
+        key_box_x = x + 18
+        key_box_y = y + ((height - key_box_h) // 2)
         self._draw_panel(
             frame_bgr,
-            x + 18,
-            y + 20,
-            54 if key != "Esc" else 70,
-            44,
+            key_box_x,
+            key_box_y,
+            key_box_w,
+            key_box_h,
             color=self.SELECTED,
             border_color=self.BORDER_ACTIVE,
             alpha=0.95,
             radius=12,
         )
-        key_box_w = 54 if key != "Esc" else 70
         self._put_text_centered(
             frame_bgr,
             key,
-            x + 18,
-            y + 20,
+            key_box_x,
+            key_box_y,
             key_box_w,
-            44,
-            0.46,
+            key_box_h,
+            0.5,
             self.PRIMARY,
             2,
         )
-        text_x = x + 92 if key != "Esc" else x + 108
+        text_x = key_box_x + key_box_w + 24
+        title_y = y + 34
+        subtitle_y = y + 61
         self._put_text(
             frame_bgr,
             title,
             text_x,
-            y + 38,
-            0.58,
+            title_y,
+            0.62,
             self.TEXT,
             2,
             max_width=width - (text_x - x) - 24,
@@ -1297,8 +1615,8 @@ class OverlayRenderer:
             frame_bgr,
             subtitle,
             text_x,
-            y + 62,
-            0.4,
+            subtitle_y,
+            0.43,
             self.MUTED,
             max_width=width - (text_x - x) - 24,
         )
@@ -1432,22 +1750,39 @@ class OverlayRenderer:
             blend = row / max(1, frame_h - 1)
             frame_bgr[row, :] = (top * (1 - blend) + bottom * blend).astype(np.uint8)
 
+        if self.theme == "dark":
+            texture_color = (55, 47, 39)
+            texture_alpha = 0.18
+            header_color = (31, 27, 23)
+            header_border = (67, 57, 48)
+            glow_primary = (74, 92, 36)
+            glow_secondary = (50, 43, 37)
+            glow_alpha = 0.26
+            footer_color = (68, 78, 32)
+        else:
+            texture_color = (211, 224, 218)
+            texture_alpha = 0.24
+            header_color = (221, 234, 228)
+            header_border = (175, 198, 187)
+            glow_primary = (188, 222, 204)
+            glow_secondary = (217, 226, 229)
+            glow_alpha = 0.32
+            footer_color = (184, 215, 199)
+
         texture = frame_bgr.copy()
         for x in range(-frame_h, frame_w, 92):
-            cv2.line(texture, (x, frame_h), (x + frame_h, 0), (211, 224, 218), 1)
-        cv2.addWeighted(texture, 0.24, frame_bgr, 0.76, 0, frame_bgr)
+            cv2.line(texture, (x, frame_h), (x + frame_h, 0), texture_color, 1)
+        cv2.addWeighted(texture, texture_alpha, frame_bgr, 1 - texture_alpha, 0, frame_bgr)
 
-        cv2.rectangle(frame_bgr, (0, 0), (frame_w, 104), (221, 234, 228), -1)
-        cv2.line(frame_bgr, (0, 104), (frame_w, 104), (175, 198, 187), 1)
+        cv2.rectangle(frame_bgr, (0, 0), (frame_w, 104), header_color, -1)
+        cv2.line(frame_bgr, (0, 104), (frame_w, 104), header_border, 1)
         cv2.line(frame_bgr, (0, 105), (frame_w, 105), self.PRIMARY, 2)
 
         glow = frame_bgr.copy()
-        cv2.circle(glow, (frame_w - 120, 78), 210, (188, 222, 204), -1)
-        cv2.circle(glow, (92, frame_h - 76), 180, (217, 226, 229), -1)
-        cv2.addWeighted(glow, 0.32, frame_bgr, 0.68, 0, frame_bgr)
-        cv2.rectangle(
-            frame_bgr, (0, frame_h - 6), (frame_w, frame_h), (184, 215, 199), -1
-        )
+        cv2.circle(glow, (frame_w - 120, 78), 210, glow_primary, -1)
+        cv2.circle(glow, (92, frame_h - 76), 180, glow_secondary, -1)
+        cv2.addWeighted(glow, glow_alpha, frame_bgr, 1 - glow_alpha, 0, frame_bgr)
+        cv2.rectangle(frame_bgr, (0, frame_h - 6), (frame_w, frame_h), footer_color, -1)
 
     def _draw_panel(
         self,
@@ -1456,11 +1791,13 @@ class OverlayRenderer:
         y: int,
         width: int,
         height: int,
-        color: tuple[int, int, int] = PANEL,
-        border_color: tuple[int, int, int] = BORDER,
+        color: tuple[int, int, int] | None = None,
+        border_color: tuple[int, int, int] | None = None,
         alpha: float = 0.88,
         radius: int = 14,
     ) -> None:
+        color = self.PANEL if color is None else color
+        border_color = self.BORDER if border_color is None else border_color
         overlay = frame_bgr.copy()
         self._draw_rounded_rect(overlay, x, y, width, height, radius, color, -1)
         cv2.addWeighted(overlay, alpha, frame_bgr, 1 - alpha, 0, frame_bgr)
@@ -1663,7 +2000,7 @@ class OverlayRenderer:
 
     @staticmethod
     def _font_size(scale: float) -> int:
-        return max(10, int(round(scale * 34)))
+        return max(10, int(round(scale * 36)))
 
     @staticmethod
     @lru_cache(maxsize=64)
