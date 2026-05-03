@@ -12,8 +12,15 @@ import cv2
 import numpy as np
 
 from analysis.squat import SquatRepCounter, SquatStateAnalyzer
-from core.config import SQUAT_CONFIG
+from core.config import CALIBRATION_CONFIG, SquatConfig
 from core.paths import SESSIONS_DIR
+from core.user_profile import (
+    build_calibration_profile,
+    load_calibration_profile,
+    load_squat_config,
+    reset_calibration_profile,
+    save_calibration_profile,
+)
 from pose.detector import PoseDetector
 from session.browser import (
     list_recent_sessions,
@@ -34,6 +41,7 @@ STATE_DASHBOARD = "dashboard"
 STATE_SESSION = "session"
 STATE_BROWSE = "browse"
 STATE_ANALYTICS = "analytics"
+STATE_CALIBRATION = "calibration"
 UP_KEY = 2490368
 DOWN_KEY = 2621440
 FEEDBACK_HOLD_SECONDS = 2.0
@@ -189,6 +197,7 @@ def _current_feedback(
     feedback_level: str,
     feedback_until: float,
     timestamp: float,
+    squat_config: SquatConfig,
 ) -> tuple[str | None, str]:
     if feedback_message and timestamp <= feedback_until:
         return feedback_message, feedback_level
@@ -196,7 +205,7 @@ def _current_feedback(
     angle = squat_state.knee_angle
     if (
         angle is not None
-        and SQUAT_CONFIG.shallow_knee_angle < angle <= SQUAT_CONFIG.rep_bottom_knee_angle
+        and squat_config.shallow_knee_angle < angle <= squat_config.rep_bottom_knee_angle
     ):
         return "Go deeper", "warning"
 
@@ -215,6 +224,26 @@ def _rep_feedback(issues: tuple[str, ...], is_bad: bool) -> tuple[str, str]:
     return "Rep accepted", "ok"
 
 
+def _calibration_status(
+    *,
+    phase: str,
+    sample_count: int = 0,
+    elapsed: float = 0.0,
+    message: str = "",
+    error: str = "",
+    profile=None,
+) -> dict:
+    return {
+        "phase": phase,
+        "sample_count": sample_count,
+        "elapsed": elapsed,
+        "duration": CALIBRATION_CONFIG.collection_seconds,
+        "message": message,
+        "error": error,
+        "profile": profile,
+    }
+
+
 def run_session(overlay: OverlayRenderer) -> bool:
     """Run one workout session and persist outputs on exit."""
     cap = cv2.VideoCapture(0)
@@ -228,8 +257,9 @@ def run_session(overlay: OverlayRenderer) -> bool:
     cap.set(cv2.CAP_PROP_FPS, 30)
 
     detector = PoseDetector()
-    analyzer = SquatStateAnalyzer()
-    rep_counter = SquatRepCounter()
+    squat_config = load_squat_config()
+    analyzer = SquatStateAnalyzer(squat_config)
+    rep_counter = SquatRepCounter(squat_config)
     summary = SessionSummary(started_at=datetime.now())
     session_dir = SESSIONS_DIR / summary.started_at.strftime("%Y%m%d_%H%M%S")
     recorder = SessionRecorder(session_dir)
@@ -312,6 +342,7 @@ def run_session(overlay: OverlayRenderer) -> bool:
                 feedback_level,
                 feedback_until,
                 timestamp,
+                squat_config,
             )
             overlay.draw(
                 frame,
@@ -333,15 +364,15 @@ def run_session(overlay: OverlayRenderer) -> bool:
                     "knee_angle": squat_state.knee_angle,
                     "ankle_angle": squat_state.ankle_angle,
                     "torso_angle": squat_state.torso_angle,
-                    "down_knee_angle": SQUAT_CONFIG.down_knee_angle,
-                    "up_knee_angle": SQUAT_CONFIG.up_knee_angle,
-                    "rep_bottom_knee_angle": SQUAT_CONFIG.rep_bottom_knee_angle,
-                    "shallow_knee_angle": SQUAT_CONFIG.shallow_knee_angle,
-                    "ankle_control_angle": SQUAT_CONFIG.ankle_control_angle,
-                    "torso_lean_angle": SQUAT_CONFIG.torso_lean_angle,
-                    "down_hold_frames": SQUAT_CONFIG.down_hold_frames,
-                    "ready_standing_frames": SQUAT_CONFIG.ready_standing_frames,
-                    "min_rep_seconds": SQUAT_CONFIG.min_rep_seconds,
+                    "down_knee_angle": squat_config.down_knee_angle,
+                    "up_knee_angle": squat_config.up_knee_angle,
+                    "rep_bottom_knee_angle": squat_config.rep_bottom_knee_angle,
+                    "shallow_knee_angle": squat_config.shallow_knee_angle,
+                    "ankle_control_angle": squat_config.ankle_control_angle,
+                    "torso_lean_angle": squat_config.torso_lean_angle,
+                    "down_hold_frames": squat_config.down_hold_frames,
+                    "ready_standing_frames": squat_config.ready_standing_frames,
+                    "min_rep_seconds": squat_config.min_rep_seconds,
                 }
                 overlay.draw_debug(frame, debug_info)
             recorder.write(frame)
@@ -430,6 +461,125 @@ def run_analytics(overlay: OverlayRenderer) -> bool:
             snapshot = load_analytics_snapshot(SESSIONS_DIR)
 
 
+def run_calibration(overlay: OverlayRenderer) -> bool:
+    """Collect a short calibration set and save user-specific squat thresholds."""
+    cap = cv2.VideoCapture(0)
+    profile = load_calibration_profile()
+
+    if not cap.isOpened():
+        cap.release()
+        status = _calibration_status(
+            phase="error",
+            message="Could not open webcam for calibration.",
+            profile=profile,
+        )
+        while True:
+            if not _window_is_open(WINDOW_NAME):
+                return False
+            frame = _blank_screen()
+            overlay.draw_calibration(frame, None, None, status)
+            _show_frame(WINDOW_NAME, frame)
+            key = _wait_for_key_or_close(STATIC_SCREEN_WAIT_MS)
+            if key is None:
+                return False
+            if key == -1:
+                continue
+            if key == 27:
+                return True
+            if key in (ord("r"), ord("R")):
+                reset_calibration_profile()
+                profile = None
+                status = _calibration_status(
+                    phase="reset",
+                    message="Calibration reset. Defaults will be used.",
+                    profile=profile,
+                )
+
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
+    cap.set(cv2.CAP_PROP_FPS, 30)
+
+    detector = PoseDetector()
+    analyzer = SquatStateAnalyzer()
+    knee_samples: list[float] = []
+    started_at = time.time()
+    saved = False
+    message = "Perform 2-3 normal squats. The app will save automatically."
+    phase = "collecting"
+
+    try:
+        while True:
+            if not _window_is_open(WINDOW_NAME):
+                return False
+
+            ok, frame = cap.read()
+            if not ok:
+                phase = "error"
+                message = "Camera frame unavailable. Press Esc to return."
+                frame = _blank_screen()
+                results = None
+                squat_state = None
+            else:
+                results = detector.process(frame)
+                squat_state = analyzer.classify(results)
+                if (
+                    phase == "collecting"
+                    and squat_state.pose_visible
+                    and squat_state.knee_angle is not None
+                ):
+                    knee_samples.append(squat_state.knee_angle)
+
+            elapsed = time.time() - started_at
+            if (
+                phase == "collecting"
+                and elapsed >= CALIBRATION_CONFIG.collection_seconds
+            ):
+                try:
+                    profile = build_calibration_profile(knee_samples)
+                    save_calibration_profile(profile)
+                    phase = "saved"
+                    saved = True
+                    message = "Calibration saved. Press Esc to return or R to reset."
+                except ValueError as exc:
+                    phase = "failed"
+                    message = f"{exc} Press R to retry or Esc to return."
+
+            status = _calibration_status(
+                phase=phase,
+                sample_count=len(knee_samples),
+                elapsed=elapsed,
+                message=message,
+                profile=profile,
+            )
+            overlay.draw_calibration(frame, results, squat_state, status)
+            _show_frame(WINDOW_NAME, frame)
+
+            key = _wait_for_key_or_close(1 if phase == "collecting" else STATIC_SCREEN_WAIT_MS)
+            if key is None:
+                return False
+            if key == -1:
+                continue
+            if key == 27:
+                return True
+            if key in (ord("r"), ord("R")):
+                reset_calibration_profile()
+                profile = None
+                knee_samples.clear()
+                started_at = time.time()
+                saved = False
+                phase = "collecting"
+                message = "Calibration reset. Perform 2-3 normal squats again."
+            elif key in (ord("c"), ord("C")) and saved:
+                knee_samples.clear()
+                started_at = time.time()
+                saved = False
+                phase = "collecting"
+                message = "Recalibrating. Perform 2-3 normal squats."
+    finally:
+        detector.close()
+        cap.release()
+
+
 def main() -> None:
     overlay = OverlayRenderer()
     state = STATE_DASHBOARD
@@ -442,7 +592,7 @@ def main() -> None:
 
             if state == STATE_DASHBOARD:
                 frame = _blank_screen()
-                overlay.draw_dashboard(frame)
+                overlay.draw_dashboard(frame, load_calibration_profile())
                 _show_frame(WINDOW_NAME, frame)
                 key = _wait_for_key_or_close(STATIC_SCREEN_WAIT_MS)
 
@@ -452,6 +602,8 @@ def main() -> None:
                     continue
                 if key in (ord("s"), ord("S")):
                     state = STATE_SESSION
+                elif key in (ord("c"), ord("C")):
+                    state = STATE_CALIBRATION
                 elif key in (ord("b"), ord("B")):
                     state = STATE_BROWSE
                 elif key in (ord("a"), ord("A")):
@@ -468,6 +620,10 @@ def main() -> None:
                 state = STATE_DASHBOARD
             elif state == STATE_ANALYTICS:
                 if not run_analytics(overlay):
+                    break
+                state = STATE_DASHBOARD
+            elif state == STATE_CALIBRATION:
+                if not run_calibration(overlay):
                     break
                 state = STATE_DASHBOARD
     finally:
