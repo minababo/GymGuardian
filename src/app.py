@@ -16,10 +16,13 @@ from core.config import CALIBRATION_CONFIG, SquatConfig
 from core.paths import SESSIONS_DIR
 from core.user_profile import (
     build_calibration_profile,
+    load_app_settings,
     load_calibration_profile,
     load_squat_config,
     reset_calibration_profile,
     save_calibration_profile,
+    toggle_hide_incomplete_sessions,
+    toggle_theme,
 )
 from pose.detector import PoseDetector
 from session.browser import (
@@ -42,6 +45,7 @@ STATE_SESSION = "session"
 STATE_BROWSE = "browse"
 STATE_ANALYTICS = "analytics"
 STATE_CALIBRATION = "calibration"
+STATE_SETTINGS = "settings"
 UP_KEY = 2490368
 DOWN_KEY = 2621440
 FEEDBACK_HOLD_SECONDS = 2.0
@@ -49,6 +53,11 @@ SW_MAXIMIZE = 3
 STATIC_SCREEN_WAIT_MS = 80
 
 _WINDOW_MAXIMIZED = False
+
+
+def _sync_app_background(overlay: OverlayRenderer) -> None:
+    global APP_BG
+    APP_BG = overlay.BG
 
 
 def _get_window_client_size(window_name: str) -> tuple[int, int] | None:
@@ -224,6 +233,23 @@ def _rep_feedback(issues: tuple[str, ...], is_bad: bool) -> tuple[str, str]:
     return "Rep accepted", "ok"
 
 
+def _filter_sessions_for_settings(sessions, settings):
+    if not getattr(settings, "hide_incomplete_sessions", False):
+        return sessions
+
+    return [
+        session
+        for session in sessions
+        if bool(
+            getattr(
+                session,
+                "valid_session",
+                session.rep_count not in (None, 0),
+            )
+        )
+    ]
+
+
 def _calibration_status(
     *,
     phase: str,
@@ -257,7 +283,12 @@ def run_session(overlay: OverlayRenderer) -> bool:
     cap.set(cv2.CAP_PROP_FPS, 30)
 
     detector = PoseDetector()
-    squat_config = load_squat_config()
+    calibration_profile = load_calibration_profile()
+    squat_config = (
+        calibration_profile.to_squat_config()
+        if calibration_profile is not None
+        else load_squat_config()
+    )
     analyzer = SquatStateAnalyzer(squat_config)
     rep_counter = SquatRepCounter(squat_config)
     summary = SessionSummary(started_at=datetime.now())
@@ -351,6 +382,7 @@ def run_session(overlay: OverlayRenderer) -> bool:
                 rep_counter,
                 feedback_text,
                 feedback_kind,
+                calibration_profile,
             )
             if debug_enabled:
                 pose_detected = bool(
@@ -410,15 +442,23 @@ def run_session(overlay: OverlayRenderer) -> bool:
 
 def run_browser(overlay: OverlayRenderer) -> bool:
     """Render session browser and handle navigation/actions."""
-    sessions = list_recent_sessions(SESSIONS_DIR)
+    settings = load_app_settings()
+    all_sessions = list_recent_sessions(SESSIONS_DIR)
+    sessions = _filter_sessions_for_settings(all_sessions, settings)
     selected_index = 0
 
     while True:
         if not _window_is_open(WINDOW_NAME):
             return False
+        selected_index = min(selected_index, max(0, len(sessions) - 1))
 
         frame = _blank_screen()
-        overlay.draw_browser(frame, sessions, selected_index)
+        overlay.draw_browser(
+            frame,
+            sessions,
+            selected_index,
+            settings.hide_incomplete_sessions,
+        )
         _show_frame(WINDOW_NAME, frame)
 
         key = _wait_for_key_or_close(STATIC_SCREEN_WAIT_MS)
@@ -436,18 +476,24 @@ def run_browser(overlay: OverlayRenderer) -> bool:
             open_session_video(sessions[selected_index])
         elif key in (ord("o"), ord("O")) and sessions:
             open_session_folder(sessions[selected_index])
+        elif key in (ord("h"), ord("H")):
+            settings = toggle_hide_incomplete_sessions(settings)
+            all_sessions = list_recent_sessions(SESSIONS_DIR)
+            sessions = _filter_sessions_for_settings(all_sessions, settings)
+            selected_index = 0
 
 
 def run_analytics(overlay: OverlayRenderer) -> bool:
     """Render lightweight session analytics using saved summaries."""
     snapshot = load_analytics_snapshot(SESSIONS_DIR)
+    calibration_profile = load_calibration_profile()
 
     while True:
         if not _window_is_open(WINDOW_NAME):
             return False
 
         frame = _blank_screen()
-        overlay.draw_analytics(frame, snapshot)
+        overlay.draw_analytics(frame, snapshot, calibration_profile)
         _show_frame(WINDOW_NAME, frame)
 
         key = _wait_for_key_or_close(STATIC_SCREEN_WAIT_MS)
@@ -459,6 +505,7 @@ def run_analytics(overlay: OverlayRenderer) -> bool:
             return True
         if key in (ord("r"), ord("R")):
             snapshot = load_analytics_snapshot(SESSIONS_DIR)
+            calibration_profile = load_calibration_profile()
 
 
 def run_calibration(overlay: OverlayRenderer) -> bool:
@@ -580,8 +627,39 @@ def run_calibration(overlay: OverlayRenderer) -> bool:
         cap.release()
 
 
+def run_settings(overlay: OverlayRenderer) -> bool:
+    """Render local settings and handle non-destructive preferences."""
+    settings = load_app_settings()
+
+    while True:
+        if not _window_is_open(WINDOW_NAME):
+            return False
+
+        frame = _blank_screen()
+        overlay.draw_settings(frame, settings, load_calibration_profile())
+        _show_frame(WINDOW_NAME, frame)
+
+        key = _wait_for_key_or_close(STATIC_SCREEN_WAIT_MS)
+        if key is None:
+            return False
+        if key == -1:
+            continue
+        if key == 27:
+            return True
+        if key in (ord("t"), ord("T")):
+            settings = toggle_theme(settings)
+            overlay.set_theme(settings.theme)
+            _sync_app_background(overlay)
+        elif key in (ord("h"), ord("H")):
+            settings = toggle_hide_incomplete_sessions(settings)
+        elif key in (ord("r"), ord("R")):
+            reset_calibration_profile()
+
+
 def main() -> None:
-    overlay = OverlayRenderer()
+    settings = load_app_settings()
+    overlay = OverlayRenderer(settings.theme)
+    _sync_app_background(overlay)
     state = STATE_DASHBOARD
     _initialize_window()
 
@@ -608,6 +686,8 @@ def main() -> None:
                     state = STATE_BROWSE
                 elif key in (ord("a"), ord("A")):
                     state = STATE_ANALYTICS
+                elif key in (ord("g"), ord("G")):
+                    state = STATE_SETTINGS
                 elif key == 27:
                     break
             elif state == STATE_SESSION:
@@ -624,6 +704,10 @@ def main() -> None:
                 state = STATE_DASHBOARD
             elif state == STATE_CALIBRATION:
                 if not run_calibration(overlay):
+                    break
+                state = STATE_DASHBOARD
+            elif state == STATE_SETTINGS:
+                if not run_settings(overlay):
                     break
                 state = STATE_DASHBOARD
     finally:
