@@ -29,6 +29,7 @@ from ui.overlay import OverlayRenderer
 WINDOW_NAME = "GymGuardian"
 FRAME_WIDTH = 1280
 FRAME_HEIGHT = 720
+APP_BG = (229, 237, 233)
 STATE_DASHBOARD = "dashboard"
 STATE_SESSION = "session"
 STATE_BROWSE = "browse"
@@ -37,12 +38,16 @@ UP_KEY = 2490368
 DOWN_KEY = 2621440
 FEEDBACK_HOLD_SECONDS = 2.0
 SW_MAXIMIZE = 3
+STATIC_SCREEN_WAIT_MS = 80
 
 _WINDOW_MAXIMIZED = False
 
 
 def _get_window_client_size(window_name: str) -> tuple[int, int] | None:
     """Return the drawable client area for the app window."""
+    if not _window_is_open(window_name):
+        return None
+
     if os.name == "nt":
         hwnd = ctypes.windll.user32.FindWindowW(None, window_name)
         if hwnd:
@@ -63,16 +68,32 @@ def _get_window_client_size(window_name: str) -> tuple[int, int] | None:
     return None
 
 
+def _window_is_open(window_name: str) -> bool:
+    """Return false when the user has closed the OpenCV window."""
+    try:
+        return cv2.getWindowProperty(window_name, cv2.WND_PROP_VISIBLE) >= 1
+    except cv2.error:
+        return False
+
+
+def _wait_for_key_or_close(delay_ms: int) -> int | None:
+    """Poll keyboard input while allowing the native close button to exit."""
+    key = cv2.waitKeyEx(delay_ms)
+    if not _window_is_open(WINDOW_NAME):
+        return None
+    return key
+
+
 def _blank_screen() -> np.ndarray:
     window_size = _get_window_client_size(WINDOW_NAME)
     if window_size is not None:
         window_w, window_h = window_size
         canvas = np.empty((window_h, window_w, 3), dtype=np.uint8)
-        canvas[:] = (15, 15, 15)
+        canvas[:] = APP_BG
         return canvas
 
     canvas = np.empty((FRAME_HEIGHT, FRAME_WIDTH, 3), dtype=np.uint8)
-    canvas[:] = (15, 15, 15)
+    canvas[:] = APP_BG
     return canvas
 
 
@@ -113,9 +134,14 @@ def _fit_frame_to_window(window_name: str, frame: np.ndarray) -> np.ndarray:
     ):
         return frame
 
-    resized = cv2.resize(frame, (target_w, target_h), interpolation=cv2.INTER_LINEAR)
+    interpolation = (
+        cv2.INTER_CUBIC
+        if target_w > frame_w or target_h > frame_h
+        else cv2.INTER_AREA
+    )
+    resized = cv2.resize(frame, (target_w, target_h), interpolation=interpolation)
     canvas = np.empty((window_h, window_w, 3), dtype=frame.dtype)
-    canvas[:] = (15, 15, 15)
+    canvas[:] = APP_BG
     x_offset = (window_w - target_w) // 2
     y_offset = (window_h - target_h) // 2
     canvas[y_offset:y_offset + target_h, x_offset:x_offset + target_w] = resized
@@ -126,11 +152,35 @@ def _show_frame(window_name: str, frame: np.ndarray) -> None:
     """Display a frame with aspect-preserving scaling and maximize once on startup."""
     global _WINDOW_MAXIMIZED
 
-    cv2.imshow(window_name, _fit_frame_to_window(window_name, frame))
+    if not _window_is_open(window_name):
+        return
 
     if not _WINDOW_MAXIMIZED:
         _maximize_window(window_name)
+        cv2.waitKey(1)
         _WINDOW_MAXIMIZED = True
+
+    cv2.imshow(window_name, _fit_frame_to_window(window_name, frame))
+
+
+def _initialize_window() -> None:
+    """Create and maximize the window before the first real UI frame is rendered."""
+    global _WINDOW_MAXIMIZED
+
+    cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
+    cv2.resizeWindow(WINDOW_NAME, FRAME_WIDTH, FRAME_HEIGHT)
+
+    # OpenCV only creates the native window after the first imshow call.
+    placeholder = np.empty((FRAME_HEIGHT, FRAME_WIDTH, 3), dtype=np.uint8)
+    placeholder[:] = APP_BG
+    cv2.imshow(WINDOW_NAME, placeholder)
+    for _ in range(3):
+        cv2.waitKey(1)
+
+    _maximize_window(WINDOW_NAME)
+    for _ in range(5):
+        cv2.waitKey(1)
+    _WINDOW_MAXIMIZED = True
 
 
 def _current_feedback(
@@ -165,12 +215,12 @@ def _rep_feedback(issues: tuple[str, ...], is_bad: bool) -> tuple[str, str]:
     return "Rep accepted", "ok"
 
 
-def run_session(overlay: OverlayRenderer) -> None:
+def run_session(overlay: OverlayRenderer) -> bool:
     """Run one workout session and persist outputs on exit."""
     cap = cv2.VideoCapture(0)
     if not cap.isOpened():
         print("Warning: could not open webcam for session.")
-        return
+        return _window_is_open(WINDOW_NAME)
 
     # Request 720p capture when supported by the camera.
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
@@ -191,9 +241,14 @@ def run_session(overlay: OverlayRenderer) -> None:
     feedback_message: str | None = None
     feedback_level = "info"
     feedback_until = 0.0
+    keep_running = True
 
     try:
         while True:
+            if not _window_is_open(WINDOW_NAME):
+                keep_running = False
+                break
+
             ok, frame = cap.read()
             if not ok:
                 break
@@ -292,7 +347,10 @@ def run_session(overlay: OverlayRenderer) -> None:
             recorder.write(frame)
 
             _show_frame(WINDOW_NAME, frame)
-            key = cv2.waitKey(1) & 0xFF
+            key = _wait_for_key_or_close(1)
+            if key is None:
+                keep_running = False
+                break
             if key == 27:
                 break
             if key in (ord("d"), ord("D")):
@@ -316,20 +374,29 @@ def run_session(overlay: OverlayRenderer) -> None:
         if recorder_started and recorder.output_path.exists():
             print(f"Session video path: {recorder.output_path}")
 
+    return keep_running
 
-def run_browser(overlay: OverlayRenderer) -> None:
+
+def run_browser(overlay: OverlayRenderer) -> bool:
     """Render session browser and handle navigation/actions."""
     sessions = list_recent_sessions(SESSIONS_DIR)
     selected_index = 0
 
     while True:
+        if not _window_is_open(WINDOW_NAME):
+            return False
+
         frame = _blank_screen()
         overlay.draw_browser(frame, sessions, selected_index)
         _show_frame(WINDOW_NAME, frame)
 
-        key = cv2.waitKeyEx(0)
+        key = _wait_for_key_or_close(STATIC_SCREEN_WAIT_MS)
+        if key is None:
+            return False
+        if key == -1:
+            continue
         if key == 27:
-            return
+            return True
         if key == UP_KEY and sessions:
             selected_index = max(0, selected_index - 1)
         elif key == DOWN_KEY and sessions:
@@ -340,18 +407,25 @@ def run_browser(overlay: OverlayRenderer) -> None:
             open_session_folder(sessions[selected_index])
 
 
-def run_analytics(overlay: OverlayRenderer) -> None:
+def run_analytics(overlay: OverlayRenderer) -> bool:
     """Render lightweight session analytics using saved summaries."""
     snapshot = load_analytics_snapshot(SESSIONS_DIR)
 
     while True:
+        if not _window_is_open(WINDOW_NAME):
+            return False
+
         frame = _blank_screen()
         overlay.draw_analytics(frame, snapshot)
         _show_frame(WINDOW_NAME, frame)
 
-        key = cv2.waitKeyEx(0)
+        key = _wait_for_key_or_close(STATIC_SCREEN_WAIT_MS)
+        if key is None:
+            return False
+        if key == -1:
+            continue
         if key == 27:
-            return
+            return True
         if key in (ord("r"), ord("R")):
             snapshot = load_analytics_snapshot(SESSIONS_DIR)
 
@@ -359,17 +433,23 @@ def run_analytics(overlay: OverlayRenderer) -> None:
 def main() -> None:
     overlay = OverlayRenderer()
     state = STATE_DASHBOARD
-    cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
-    cv2.resizeWindow(WINDOW_NAME, FRAME_WIDTH, FRAME_HEIGHT)
+    _initialize_window()
 
     try:
         while True:
+            if not _window_is_open(WINDOW_NAME):
+                break
+
             if state == STATE_DASHBOARD:
                 frame = _blank_screen()
                 overlay.draw_dashboard(frame)
                 _show_frame(WINDOW_NAME, frame)
-                key = cv2.waitKeyEx(0)
+                key = _wait_for_key_or_close(STATIC_SCREEN_WAIT_MS)
 
+                if key is None:
+                    break
+                if key == -1:
+                    continue
                 if key in (ord("s"), ord("S")):
                     state = STATE_SESSION
                 elif key in (ord("b"), ord("B")):
@@ -379,13 +459,16 @@ def main() -> None:
                 elif key == 27:
                     break
             elif state == STATE_SESSION:
-                run_session(overlay)
+                if not run_session(overlay):
+                    break
                 state = STATE_DASHBOARD
             elif state == STATE_BROWSE:
-                run_browser(overlay)
+                if not run_browser(overlay):
+                    break
                 state = STATE_DASHBOARD
             elif state == STATE_ANALYTICS:
-                run_analytics(overlay)
+                if not run_analytics(overlay):
+                    break
                 state = STATE_DASHBOARD
     finally:
         cv2.destroyAllWindows()
