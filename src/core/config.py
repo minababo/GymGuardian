@@ -29,5 +29,25 @@ class SquatConfig:
     min_rep_seconds: float = 0.6
 
 
+@dataclass(frozen=True)
+class CalibrationConfig:
+    collection_seconds: float = 12.0
+    min_samples: int = 30
+    min_movement_range: float = 25.0
+    down_margin_ratio: float = 0.12
+    shallow_margin_ratio: float = 0.20
+    rep_bottom_margin_ratio: float = 0.45
+    up_margin_ratio: float = 0.08
+    min_down_margin: float = 6.0
+    max_down_margin: float = 12.0
+    min_shallow_margin: float = 14.0
+    max_shallow_margin: float = 25.0
+    min_rep_bottom_margin: float = 30.0
+    max_rep_bottom_margin: float = 50.0
+    min_up_margin: float = 6.0
+    max_up_margin: float = 12.0
+
+
 POSE_CONFIG = PoseConfig()
 SQUAT_CONFIG = SquatConfig()
+CALIBRATION_CONFIG = CalibrationConfig()
