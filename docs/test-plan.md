@@ -137,3 +137,78 @@ This document defines the manual test plan for the GymGuardian MVP desktop appli
 - Browser screenshot: `Yes`
 - Sample `summary.json`: `Yes`
 - Sample `session.mp4`: `Yes`
+
+## 9. Evaluation Harness
+
+GymGuardian includes a report-focused evaluation harness for comparing manually
+labelled saved sessions against detected session outputs. The label file is
+stored at `docs/evaluation/manual_labels.csv`.
+
+### Labelling Process
+
+1. Review a saved `session.mp4` from `sessions/<timestamp>/`.
+2. Count the visible completed squat repetitions manually.
+3. Count how many repetitions should be classified as bad.
+4. Record the expected main issue, such as `too_shallow`, `ankle_control`,
+   `torso_lean`, or `none`.
+5. Optionally record a per-repetition bad sequence using `0` for good and `1`
+   for bad, for example `0,0,1,1`.
+
+### Running the Harness
+
+```powershell
+.\venv\Scripts\python.exe src\session\evaluation_export.py
+```
+
+The harness exports:
+
+- `exports/evaluation_results.csv`
+- `exports/evaluation_report.html`
+
+### Metrics Produced
+
+- Rep count error and rep count accuracy
+- Bad-rep count error and bad-rep rate difference
+- Issue match against the manually expected issue
+- Optional bad-rep precision and recall from per-rep labels
+- Average FPS from saved session summaries
+
+This evaluates the full GymGuardian system output. It should not be described
+as custom model-training accuracy because the project uses MediaPipe pose
+estimation with rule-based squat analysis.
+
+## 10. Automated Testing
+
+Automated testing was added to support supervisor feedback and strengthen the
+final evaluation evidence. These tests focus on deterministic project logic
+that can run without a webcam.
+
+### Automated Test Command
+
+```powershell
+.\venv\Scripts\python.exe -m pytest
+```
+
+### Automated Coverage
+
+| Test Area | Automated Coverage |
+| --- | --- |
+| Squat logic | Joint-angle calculation, full-depth rep counting, shallow-rep classification, and no-pose reset handling |
+| Session summary | `summary.json`, `rep_metrics.csv`, `session_report.txt`, and `valid_session` output |
+| Analytics | Meaningful-session filtering, latest/previous comparison, issue totals, and FPS averaging |
+| Calibration/settings | Adaptive threshold generation, invalid calibration rejection, and settings normalization |
+| Evaluation harness | Manual label parsing, valid-session scoring, missing sessions, incomplete sessions, and sequence precision/recall |
+
+### Documentation Note
+
+The automated suite validates application logic and saved-output processing. It
+does not claim to test MediaPipe model accuracy or webcam performance. Live
+camera behaviour, lighting sensitivity, and camera-angle limitations remain part
+of the manual scenario-based evaluation.
+
+### Evidence To Capture
+
+- Screenshot of the terminal command `.\venv\Scripts\python.exe -m pytest`.
+- Screenshot showing the final result, for example `13 passed`.
+- Include the command and result in the Testing and Evaluation section of the
+  final report.
