@@ -121,7 +121,14 @@ class OverlayRenderer:
             calibration_profile,
         )
 
-    def draw_dashboard(self, frame_bgr, calibration_profile=None) -> None:
+    def draw_dashboard(
+        self,
+        frame_bgr,
+        calibration_profile=None,
+        settings=None,
+        notice_message: str | None = None,
+        camera_options=None,
+    ) -> None:
         self._fill_background(frame_bgr)
         frame_h, frame_w = frame_bgr.shape[:2]
 
@@ -179,9 +186,15 @@ class OverlayRenderer:
             max_width=shell_w - 124,
         )
 
-        insight_w = 250
+        camera_index = getattr(settings, "camera_index", 0)
+        camera_label = self._format_camera_display(
+            camera_index,
+            camera_options,
+            include_index=True,
+        )
+        insight_w = 210
         insight_gap = 14
-        insight_x = shell_x + shell_w - (insight_w * 2) - insight_gap - 48
+        insight_x = shell_x + shell_w - (insight_w * 3) - (insight_gap * 2) - 48
         insight_y = shell_y + 58
         self._draw_info_card(
             frame_bgr, insight_x, insight_y, insight_w, "Scope", "Squat analysis only"
@@ -189,6 +202,14 @@ class OverlayRenderer:
         self._draw_info_card(
             frame_bgr,
             insight_x + insight_w + insight_gap,
+            insight_y,
+            insight_w,
+            "Camera",
+            camera_label,
+        )
+        self._draw_info_card(
+            frame_bgr,
+            insight_x + ((insight_w + insight_gap) * 2),
             insight_y,
             insight_w,
             "Calibration",
@@ -223,9 +244,21 @@ class OverlayRenderer:
                 subtitle,
             )
 
+        if notice_message:
+            self._put_text(
+                frame_bgr,
+                notice_message,
+                shell_x + 62,
+                shell_y + shell_h - 58,
+                scale=0.42,
+                color=self.WARNING,
+                thickness=1,
+                max_width=shell_w - 124,
+            )
+
         self._put_text(
             frame_bgr,
-            "Keyboard controlled desktop prototype. Use Esc to return from any screen.",
+            "Keyboard controlled desktop prototype. K switches camera source. Esc returns from any screen.",
             shell_x + 62,
             shell_y + shell_h - 34,
             scale=0.47,
@@ -780,7 +813,13 @@ class OverlayRenderer:
             max_width=panel_w - 48,
         )
 
-    def draw_settings(self, frame_bgr, settings, calibration_profile=None) -> None:
+    def draw_settings(
+        self,
+        frame_bgr,
+        settings,
+        calibration_profile=None,
+        camera_options=None,
+    ) -> None:
         self._fill_background(frame_bgr)
         frame_h, frame_w = frame_bgr.shape[:2]
         margin = 34
@@ -789,7 +828,7 @@ class OverlayRenderer:
             frame_bgr,
             margin,
             "Settings",
-            "T toggle theme  |  H hide/show incomplete  |  R reset calibration  |  Esc dashboard",
+            "T toggle theme  |  K switch camera  |  H hide/show incomplete  |  R reset calibration  |  Esc dashboard",
         )
 
         panel_x = margin
@@ -830,8 +869,14 @@ class OverlayRenderer:
 
         card_gap = 16
         card_y = panel_y + 112
-        card_w = (panel_w - 56 - (card_gap * 2)) // 3
+        card_w = (panel_w - 56 - (card_gap * 3)) // 4
         theme_value = getattr(settings, "theme", "light").title()
+        camera_index = getattr(settings, "camera_index", 0)
+        camera_value = self._format_camera_display(
+            camera_index,
+            camera_options,
+            include_index=True,
+        )
         browser_value = (
             "Hiding incomplete"
             if getattr(settings, "hide_incomplete_sessions", False)
@@ -844,8 +889,14 @@ class OverlayRenderer:
         )
         cards = [
             ("Theme", theme_value, "Press T to switch light/dark", self.PRIMARY),
+            ("Camera", camera_value, "Press K to cycle sources", self.INFO),
             ("Session Browser", browser_value, "Press H to toggle visibility", self.TEXT),
-            ("Calibration", calibration_value, "Press R to reset calibration", self.WARNING if calibration_profile else self.MUTED),
+            (
+                "Calibration",
+                calibration_value,
+                "Press R to reset calibration",
+                self.WARNING if calibration_profile else self.MUTED,
+            ),
         ]
 
         for index, (label, value, helper, value_color) in enumerate(cards):
@@ -882,7 +933,18 @@ class OverlayRenderer:
                 max_width=card_w - 36,
             )
 
-        note_y = card_y + 158
+        camera_hint_y = card_y + 140
+        self._put_text(
+            frame_bgr,
+            self._format_camera_options_line(camera_options),
+            panel_x + 28,
+            camera_hint_y,
+            0.4,
+            self.MUTED,
+            max_width=panel_w - 56,
+        )
+
+        note_y = card_y + 174
         self._put_text(
             frame_bgr,
             "Safety note",
@@ -2073,6 +2135,41 @@ class OverlayRenderer:
         if not value:
             return "none"
         return value.replace("_", " ")
+
+    @staticmethod
+    def _camera_fallback_label(index: int) -> str:
+        labels = {
+            0: "Default / built-in",
+            1: "External USB",
+            2: "Phone / virtual",
+        }
+        return labels.get(index, f"Camera {index}")
+
+    def _format_camera_display(
+        self,
+        camera_index: int,
+        camera_options=None,
+        *,
+        include_index: bool = False,
+    ) -> str:
+        label = self._camera_fallback_label(camera_index)
+        if camera_options:
+            for option in camera_options:
+                if int(option.get("index", -1)) == camera_index:
+                    label = str(option.get("label") or label)
+                    break
+        return f"{camera_index} - {label}" if include_index else label
+
+    def _format_camera_options_line(self, camera_options=None) -> str:
+        if not camera_options:
+            return "Camera labels: 0 Default / built-in | 1 External USB | 2 Phone / virtual"
+
+        parts = []
+        for option in camera_options:
+            index = int(option.get("index", 0))
+            label = str(option.get("label") or self._camera_fallback_label(index))
+            parts.append(f"{index} {label}")
+        return "Camera sources: " + "  |  ".join(parts)
 
     def _change_color(
         self, value: int | float | None, *, positive_is_good: bool

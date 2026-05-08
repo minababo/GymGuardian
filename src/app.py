@@ -5,7 +5,9 @@ from __future__ import annotations
 import ctypes
 from ctypes import wintypes
 from datetime import datetime
+from functools import lru_cache
 import os
+import subprocess
 import time
 
 import cv2
@@ -21,6 +23,8 @@ from core.user_profile import (
     load_squat_config,
     reset_calibration_profile,
     save_calibration_profile,
+    set_camera_index,
+    switch_camera_index,
     toggle_hide_incomplete_sessions,
     toggle_theme,
 )
@@ -51,8 +55,15 @@ DOWN_KEY = 2621440
 FEEDBACK_HOLD_SECONDS = 2.0
 SW_MAXIMIZE = 3
 STATIC_SCREEN_WAIT_MS = 80
+CAMERA_INDICES = (0, 1, 2)
+FALLBACK_CAMERA_LABELS = {
+    0: "Default / built-in",
+    1: "External USB",
+    2: "Phone / virtual",
+}
 
 _WINDOW_MAXIMIZED = False
+_LAST_CAMERA_WARNING: str | None = None
 
 
 def _sync_app_background(overlay: OverlayRenderer) -> None:
@@ -270,17 +281,124 @@ def _calibration_status(
     }
 
 
-def run_session(overlay: OverlayRenderer) -> bool:
-    """Run one workout session and persist outputs on exit."""
-    cap = cv2.VideoCapture(0)
-    if not cap.isOpened():
-        print("Warning: could not open webcam for session.")
-        return _window_is_open(WINDOW_NAME)
+def _camera_backend() -> int:
+    if os.name == "nt":
+        return cv2.CAP_DSHOW
+    return cv2.CAP_ANY
 
-    # Request 720p capture when supported by the camera.
+
+@lru_cache(maxsize=1)
+def _windows_camera_names() -> tuple[str, ...]:
+    """Best-effort Windows camera names for display; OpenCV still uses indices."""
+    if os.name != "nt":
+        return ()
+
+    command = (
+        "Get-CimInstance Win32_PnPEntity | "
+        "Where-Object { $_.PNPClass -eq 'Camera' -or $_.PNPClass -eq 'Image' } | "
+        "Select-Object -ExpandProperty Name"
+    )
+    try:
+        completed = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", command],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return ()
+
+    names = []
+    for line in completed.stdout.splitlines():
+        name = line.strip()
+        if name:
+            names.append(name)
+    return tuple(names)
+
+
+def _camera_options() -> list[dict[str, object]]:
+    detected_names = _windows_camera_names()
+    options = []
+    for index in CAMERA_INDICES:
+        label = (
+            detected_names[index]
+            if index < len(detected_names)
+            else FALLBACK_CAMERA_LABELS[index]
+        )
+        options.append(
+            {
+                "index": index,
+                "label": label,
+                "detected": index < len(detected_names),
+            }
+        )
+    return options
+
+
+def _configure_camera(cap: cv2.VideoCapture) -> None:
+    # These are requests only; unsupported cameras keep their own defaults.
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
     cap.set(cv2.CAP_PROP_FPS, 30)
+
+
+def _camera_has_frame(cap: cv2.VideoCapture) -> bool:
+    for _ in range(5):
+        ok, _frame = cap.read()
+        if ok:
+            return True
+        time.sleep(0.03)
+    return False
+
+
+def _open_camera(camera_index: int, context: str) -> tuple[cv2.VideoCapture | None, int]:
+    """Open the selected camera index, falling back to index 0 when needed."""
+    global _LAST_CAMERA_WARNING
+
+    requested_index = camera_index if 0 <= camera_index <= 2 else 0
+    indices = [requested_index]
+    if requested_index != 0:
+        indices.append(0)
+
+    for index in indices:
+        cap = cv2.VideoCapture(index, _camera_backend())
+        if cap.isOpened():
+            _configure_camera(cap)
+            if not _camera_has_frame(cap):
+                cap.release()
+                print(f"Warning: camera {index} opened but produced no frames for {context}.")
+                continue
+
+            if index != requested_index:
+                warning = (
+                    f"Warning: camera {requested_index} could not be opened for "
+                    f"{context}; using camera 0 instead."
+                )
+                print(warning)
+                _LAST_CAMERA_WARNING = warning
+                set_camera_index(load_app_settings(), 0)
+            else:
+                _LAST_CAMERA_WARNING = None
+            return cap, index
+
+        cap.release()
+        print(f"Warning: camera {index} could not be opened for {context}.")
+
+    _LAST_CAMERA_WARNING = (
+        f"Warning: camera {requested_index} could not be opened for {context}, "
+        "and fallback camera 0 also failed."
+    )
+    print(_LAST_CAMERA_WARNING)
+    return None, requested_index
+
+
+def run_session(overlay: OverlayRenderer) -> bool:
+    """Run one workout session and persist outputs on exit."""
+    settings = load_app_settings()
+    cap, _active_camera_index = _open_camera(settings.camera_index, "session")
+    if cap is None:
+        return _window_is_open(WINDOW_NAME)
 
     detector = PoseDetector()
     calibration_profile = load_calibration_profile()
@@ -510,14 +628,14 @@ def run_analytics(overlay: OverlayRenderer) -> bool:
 
 def run_calibration(overlay: OverlayRenderer) -> bool:
     """Collect a short calibration set and save user-specific squat thresholds."""
-    cap = cv2.VideoCapture(0)
+    settings = load_app_settings()
+    cap, _active_camera_index = _open_camera(settings.camera_index, "calibration")
     profile = load_calibration_profile()
 
-    if not cap.isOpened():
-        cap.release()
+    if cap is None:
         status = _calibration_status(
             phase="error",
-            message="Could not open webcam for calibration.",
+            message="Could not open selected camera or fallback camera 0.",
             profile=profile,
         )
         while True:
@@ -541,10 +659,6 @@ def run_calibration(overlay: OverlayRenderer) -> bool:
                     message="Calibration reset. Defaults will be used.",
                     profile=profile,
                 )
-
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
-    cap.set(cv2.CAP_PROP_FPS, 30)
 
     detector = PoseDetector()
     analyzer = SquatStateAnalyzer()
@@ -636,7 +750,12 @@ def run_settings(overlay: OverlayRenderer) -> bool:
             return False
 
         frame = _blank_screen()
-        overlay.draw_settings(frame, settings, load_calibration_profile())
+        overlay.draw_settings(
+            frame,
+            settings,
+            load_calibration_profile(),
+            _camera_options(),
+        )
         _show_frame(WINDOW_NAME, frame)
 
         key = _wait_for_key_or_close(STATIC_SCREEN_WAIT_MS)
@@ -652,11 +771,16 @@ def run_settings(overlay: OverlayRenderer) -> bool:
             _sync_app_background(overlay)
         elif key in (ord("h"), ord("H")):
             settings = toggle_hide_incomplete_sessions(settings)
+        elif key in (ord("k"), ord("K")):
+            _windows_camera_names.cache_clear()
+            settings = switch_camera_index(settings)
         elif key in (ord("r"), ord("R")):
             reset_calibration_profile()
 
 
 def main() -> None:
+    global _LAST_CAMERA_WARNING
+
     settings = load_app_settings()
     overlay = OverlayRenderer(settings.theme)
     _sync_app_background(overlay)
@@ -669,8 +793,15 @@ def main() -> None:
                 break
 
             if state == STATE_DASHBOARD:
+                settings = load_app_settings()
                 frame = _blank_screen()
-                overlay.draw_dashboard(frame, load_calibration_profile())
+                overlay.draw_dashboard(
+                    frame,
+                    load_calibration_profile(),
+                    settings,
+                    _LAST_CAMERA_WARNING,
+                    _camera_options(),
+                )
                 _show_frame(WINDOW_NAME, frame)
                 key = _wait_for_key_or_close(STATIC_SCREEN_WAIT_MS)
 
@@ -688,6 +819,10 @@ def main() -> None:
                     state = STATE_ANALYTICS
                 elif key in (ord("g"), ord("G")):
                     state = STATE_SETTINGS
+                elif key in (ord("k"), ord("K")):
+                    _windows_camera_names.cache_clear()
+                    settings = switch_camera_index(settings)
+                    _LAST_CAMERA_WARNING = None
                 elif key == 27:
                     break
             elif state == STATE_SESSION:
