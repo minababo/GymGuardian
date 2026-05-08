@@ -170,10 +170,10 @@ class OverlayRenderer:
             "GymGuardian",
             shell_x + 58,
             shell_y + 150,
-            scale=1.7,
+            scale=1.48,
             color=self.PRIMARY,
             thickness=2,
-            max_width=shell_w - 116,
+            max_width=470,
         )
         self._put_text(
             frame_bgr,
@@ -192,7 +192,7 @@ class OverlayRenderer:
             camera_options,
             include_index=True,
         )
-        insight_w = 210
+        insight_w = 170
         insight_gap = 14
         insight_x = shell_x + shell_w - (insight_w * 3) - (insight_gap * 2) - 48
         insight_y = shell_y + 58
@@ -500,13 +500,13 @@ class OverlayRenderer:
             frame_bgr,
             margin,
             "Analytics Dashboard",
-            "R refresh  |  Esc dashboard",
+            "R refresh  |  E export report  |  Esc dashboard",
         )
 
         summary_x = margin
         summary_y = 118
         summary_w = frame_w - (margin * 2)
-        summary_h = 338
+        summary_h = 310
         lower_y = summary_y + summary_h + 18
         lower_h = frame_h - lower_y - margin
 
@@ -567,7 +567,7 @@ class OverlayRenderer:
         cards_w = summary_w - 44
         gap = 12
         card_w = (cards_w - (gap * 3)) // 4
-        card_h = 62
+        card_h = 64
         row_one_y = summary_y + 90
         row_two_y = row_one_y + card_h + gap
         row_three_y = row_two_y + card_h + gap
@@ -615,7 +615,8 @@ class OverlayRenderer:
                 label,
                 value,
                 color,
-                value_scale=0.68,
+                label_scale=0.42,
+                value_scale=0.58,
             )
 
         self._draw_metric_tile(
@@ -627,40 +628,65 @@ class OverlayRenderer:
             "Avg Torso Lean",
             self._format_angle(snapshot.latest_avg_torso_angle),
             self.TEXT,
-            value_scale=0.56,
+            label_scale=0.4,
+            value_scale=0.48,
         )
         self._draw_metric_tile(
             frame_bgr,
             cards_x + card_w + gap,
             row_three_y,
-            (card_w * 3) + (gap * 2),
+            card_w,
+            54,
+            "Avg FPS",
+            self._format_fps(snapshot.latest_avg_fps),
+            self.INFO if snapshot.latest_avg_fps is not None else self.TEXT,
+            label_scale=0.4,
+            value_scale=0.48,
+        )
+        self._draw_metric_tile(
+            frame_bgr,
+            cards_x + ((card_w + gap) * 2),
+            row_three_y,
+            (card_w * 2) + gap,
             54,
             "Most Common Issue",
             self._format_issue(snapshot.latest_most_common_issue),
             self.PRIMARY if not snapshot.latest_most_common_issue else self.WARNING,
-            value_scale=0.58,
+            label_scale=0.4,
+            value_scale=0.5,
         )
 
         panel_gap = 18
-        progress_x = margin
-        progress_w = (frame_w - (margin * 2) - panel_gap) // 2
-        report_x = progress_x + progress_w + panel_gap
-        report_w = frame_w - report_x - margin
+        trend_x = margin
+        trend_w = int((frame_w - (margin * 2) - panel_gap) * 0.58)
+        side_x = trend_x + trend_w + panel_gap
+        side_w = frame_w - side_x - margin
+        side_gap = 14
+        progress_h = max(118, (lower_h - side_gap) // 2)
+        report_h = lower_h - progress_h - side_gap
 
+        self._draw_trends_panel(
+            frame_bgr,
+            trend_x,
+            lower_y,
+            trend_w,
+            lower_h,
+            snapshot,
+        )
         self._draw_progress_panel(
             frame_bgr,
-            progress_x,
+            side_x,
             lower_y,
-            progress_w,
-            lower_h,
+            side_w,
+            progress_h,
             snapshot,
         )
         self._draw_session_report_panel(
             frame_bgr,
-            report_x,
-            lower_y,
-            report_w,
-            lower_h,
+            side_x,
+            lower_y + progress_h + side_gap,
+            side_w,
+            report_h,
             snapshot,
         )
 
@@ -1041,6 +1067,206 @@ class OverlayRenderer:
             )
             y += line_height
 
+    def _draw_trends_panel(self, frame_bgr, x, y, width, height, snapshot) -> None:
+        self._draw_panel(
+            frame_bgr,
+            x,
+            y,
+            width,
+            height,
+            color=self.PANEL,
+            border_color=self.BORDER,
+            alpha=0.95,
+        )
+        self._put_text(
+            frame_bgr,
+            "Recent Trends",
+            x + 24,
+            y + 34,
+            scale=0.66,
+            color=self.TEXT,
+            thickness=1,
+            max_width=width - 48,
+        )
+        trend_sessions = list(getattr(snapshot, "trend_sessions", ()))
+        if not trend_sessions:
+            self._put_text(
+                frame_bgr,
+                "Last 15 meaningful sessions",
+                x + 24,
+                y + 60,
+                scale=0.42,
+                color=self.MUTED,
+                max_width=width - 48,
+            )
+            self._put_text(
+                frame_bgr,
+                "No trend data available yet.",
+                x + 24,
+                y + 100,
+                scale=0.52,
+                color=self.MUTED,
+                max_width=width - 48,
+            )
+            return
+
+        visible_sessions = trend_sessions[:15]
+        self._put_text(
+            frame_bgr,
+            f"Last 15 meaningful sessions - showing {len(visible_sessions)}",
+            x + 24,
+            y + 60,
+            scale=0.46,
+            color=self.MUTED,
+            max_width=width - 48,
+        )
+
+        if len(visible_sessions) > 7:
+            rows_per_col = 8
+            row_h = 19
+            row_gap = 1
+            col_gap = 14
+            col_w = (width - 48 - col_gap) // 2
+            start_y = y + 80
+
+            for index, item in enumerate(visible_sessions):
+                col = index // rows_per_col
+                row = index % rows_per_col
+                row_x = x + 24 + (col * (col_w + col_gap))
+                row_y = start_y + (row * (row_h + row_gap))
+                row_color = self.PANEL_STRONG if index == 0 else self.PANEL_ALT
+                self._draw_panel(
+                    frame_bgr,
+                    row_x,
+                    row_y - 15,
+                    col_w,
+                    row_h,
+                    color=row_color,
+                    border_color=self.BORDER_ACTIVE if index == 0 else self.BORDER,
+                    alpha=0.9,
+                    radius=8,
+                )
+                stats = (
+                    f"R{item.rep_count} "
+                    f"B{self._format_compact_percentage(item.bad_rep_percentage)} "
+                    f"K{self._format_compact_angle(item.avg_knee_angle)}"
+                )
+                self._put_text(
+                    frame_bgr,
+                    self._format_short_session_timestamp(item.folder_name),
+                    row_x + 8,
+                    row_y,
+                    0.34,
+                    self.TEXT if index == 0 else self.MUTED,
+                    max_width=82,
+                )
+                self._put_text(
+                    frame_bgr,
+                    stats,
+                    row_x + 98,
+                    row_y,
+                    0.34,
+                    self.TEXT,
+                    max_width=112,
+                )
+                self._put_text(
+                    frame_bgr,
+                    self._format_issue(item.most_common_issue),
+                    row_x + 218,
+                    row_y,
+                    0.34,
+                    self.WARNING if item.most_common_issue else self.PRIMARY,
+                    max_width=col_w - 226,
+                )
+            return
+
+        header_y = y + 78
+        row_h = 18
+        row_gap = 3
+        session_x = x + 24
+        reps_x = x + max(220, width - 420)
+        bad_x = reps_x + 70
+        knee_x = bad_x + 92
+        issue_x = knee_x + 108
+
+        self._put_text(frame_bgr, "Session", session_x, header_y, 0.36, self.MUTED)
+        self._put_text(frame_bgr, "Reps", reps_x, header_y, 0.36, self.MUTED)
+        self._put_text(frame_bgr, "Bad %", bad_x, header_y, 0.36, self.MUTED)
+        self._put_text(frame_bgr, "Avg Knee", knee_x, header_y, 0.36, self.MUTED)
+        self._put_text(frame_bgr, "Issue", issue_x, header_y, 0.36, self.MUTED)
+        cv2.line(frame_bgr, (x + 22, y + 88), (x + width - 22, y + 88), self.BORDER, 1)
+
+        row_y = y + 108
+        for index, item in enumerate(visible_sessions):
+            row_color = self.PANEL_STRONG if index == 0 else self.PANEL_ALT
+            self._draw_panel(
+                frame_bgr,
+                x + 18,
+                row_y - 15,
+                width - 36,
+                row_h,
+                color=row_color,
+                border_color=self.BORDER_ACTIVE if index == 0 else self.BORDER,
+                alpha=0.9,
+                radius=10,
+            )
+            self._put_text(
+                frame_bgr,
+                self._format_short_session_timestamp(item.folder_name),
+                session_x,
+                row_y,
+                0.3,
+                self.TEXT if index == 0 else self.MUTED,
+                max_width=max(120, reps_x - session_x - 12),
+            )
+            self._put_text(frame_bgr, str(item.rep_count), reps_x, row_y, 0.3, self.TEXT)
+            self._put_text(
+                frame_bgr,
+                self._format_percentage(item.bad_rep_percentage),
+                bad_x,
+                row_y,
+                0.3,
+                self.WARNING if (item.bad_rep_percentage or 0) > 0 else self.TEXT,
+            )
+            self._put_text(
+                frame_bgr,
+                self._format_angle(item.avg_knee_angle),
+                knee_x,
+                row_y,
+                0.3,
+                self.TEXT,
+            )
+            self._put_text(
+                frame_bgr,
+                self._format_issue(item.most_common_issue),
+                issue_x,
+                row_y,
+                0.3,
+                self.WARNING if item.most_common_issue else self.PRIMARY,
+                max_width=x + width - issue_x - 24,
+            )
+            row_y += row_h + row_gap
+
+        footer_y = y + height - 34
+        self._put_text(
+            frame_bgr,
+            self._format_issue_totals_line(getattr(snapshot, "issue_totals", {})),
+            x + 24,
+            footer_y,
+            0.34,
+            self.MUTED,
+            max_width=width - 48,
+        )
+        self._put_text(
+            frame_bgr,
+            self._format_fps_summary(snapshot),
+            x + 24,
+            footer_y + 18,
+            0.34,
+            self.MUTED,
+            max_width=width - 48,
+        )
+
     def _draw_progress_panel(self, frame_bgr, x, y, width, height, snapshot) -> None:
         self._draw_panel(
             frame_bgr,
@@ -1066,8 +1292,8 @@ class OverlayRenderer:
             frame_bgr,
             f"Previous: {self._format_session_timestamp(snapshot.previous_timestamp)}",
             x + 24,
-            y + 62,
-            scale=0.5,
+            y + 58,
+            scale=0.42 if height < 160 else 0.5,
             color=self.MUTED,
             thickness=1,
             max_width=width - 48,
@@ -1075,56 +1301,59 @@ class OverlayRenderer:
 
         card_gap = 10
         card_w = (width - 48 - (card_gap * 2)) // 3
-        card_y = y + 92
+        compact = height < 160
+        card_y = y + 76 if compact else y + 92
+        card_h = 44 if compact else 68
         self._draw_metric_tile(
             frame_bgr,
             x + 24,
             card_y,
             card_w,
-            68,
+            card_h,
             "Reps",
             self._format_change(snapshot.rep_count_change),
             self._change_color(snapshot.rep_count_change, positive_is_good=True),
-            label_scale=0.42,
-            value_scale=0.64,
+            label_scale=0.34 if compact else 0.42,
+            value_scale=0.42 if compact else 0.64,
         )
         self._draw_metric_tile(
             frame_bgr,
             x + 24 + card_w + card_gap,
             card_y,
             card_w,
-            68,
+            card_h,
             "Bad Rate",
             self._format_percentage_point_change(snapshot.bad_rep_percentage_change),
             self._change_color(
                 snapshot.bad_rep_percentage_change, positive_is_good=False
             ),
-            label_scale=0.42,
-            value_scale=0.52,
+            label_scale=0.34 if compact else 0.42,
+            value_scale=0.34 if compact else 0.52,
         )
         self._draw_metric_tile(
             frame_bgr,
             x + 24 + ((card_w + card_gap) * 2),
             card_y,
             card_w,
-            68,
+            card_h,
             "Avg Knee",
             self._format_angle_change(snapshot.avg_knee_angle_change),
             self.TEXT,
-            label_scale=0.42,
-            value_scale=0.52,
+            label_scale=0.34 if compact else 0.42,
+            value_scale=0.34 if compact else 0.52,
         )
 
-        self._put_text(
-            frame_bgr,
-            f"Previous rep count: {self._format_metric_value(snapshot.previous_rep_count)}",
-            x + 24,
-            y + height - 24,
-            scale=0.5,
-            color=self.MUTED,
-            thickness=1,
-            max_width=width - 48,
-        )
+        if not compact:
+            self._put_text(
+                frame_bgr,
+                f"Previous rep count: {self._format_metric_value(snapshot.previous_rep_count)}",
+                x + 24,
+                y + height - 24,
+                scale=0.5,
+                color=self.MUTED,
+                thickness=1,
+                max_width=width - 48,
+            )
 
     def _draw_session_report_panel(
         self, frame_bgr, x, y, width, height, snapshot
@@ -1147,13 +1376,43 @@ class OverlayRenderer:
             "Session Report",
             x + 34,
             y + 34,
-            scale=0.66,
+            scale=0.56 if height < 160 else 0.66,
             color=self.TEXT,
             thickness=1,
             max_width=width - 48,
         )
-        item_y = y + 66
-        gap = 42
+        compact = height < 160
+        if compact:
+            rows = [
+                ("Concern", snapshot.main_concern or "N/A", self.TEXT),
+                ("Suggestion", snapshot.suggested_improvement or "N/A", self.MUTED),
+                ("Focus", snapshot.focus_area or "N/A", self.PRIMARY),
+            ]
+            row_y = y + 58
+            for label, value, color in rows:
+                self._put_text(
+                    frame_bgr,
+                    f"{label}:",
+                    x + 34,
+                    row_y,
+                    0.32,
+                    self.MUTED,
+                    max_width=92,
+                )
+                self._put_text(
+                    frame_bgr,
+                    value,
+                    x + 116,
+                    row_y,
+                    0.32,
+                    color,
+                    max_width=width - 134,
+                )
+                row_y += 22
+            return
+
+        item_y = y + (48 if compact else 66)
+        gap = 23 if compact else 42
         self._draw_report_item(
             frame_bgr,
             x + 34,
@@ -1162,6 +1421,7 @@ class OverlayRenderer:
             "Main concern",
             snapshot.main_concern or "N/A",
             self.TEXT,
+            compact=compact,
         )
         self._draw_report_item(
             frame_bgr,
@@ -1171,6 +1431,7 @@ class OverlayRenderer:
             "Suggested improvement",
             snapshot.suggested_improvement or "N/A",
             self.MUTED,
+            compact=compact,
         )
         self._draw_report_item(
             frame_bgr,
@@ -1180,6 +1441,7 @@ class OverlayRenderer:
             "Focus area",
             snapshot.focus_area or "N/A",
             self.PRIMARY,
+            compact=compact,
         )
 
     def _draw_calibration_badge(
@@ -1456,8 +1718,9 @@ class OverlayRenderer:
         label_scale: float = 0.46,
         value_scale: float | None = None,
     ) -> None:
-        label_y = y + 22
-        value_y = y + height - 14
+        compact = height <= 64
+        label_y = y + (16 if compact else 22)
+        value_y = y + height - (7 if compact else 14)
         if value_scale is None:
             value_scale = 0.7 if height < 70 else 0.82
 
@@ -1501,14 +1764,24 @@ class OverlayRenderer:
         label: str,
         value: str,
         value_color: tuple[int, int, int],
+        *,
+        compact: bool = False,
     ) -> None:
-        self._put_text(frame_bgr, label, x, y, 0.44, self.MUTED, max_width=width)
+        self._put_text(
+            frame_bgr,
+            label,
+            x,
+            y,
+            0.34 if compact else 0.44,
+            self.MUTED,
+            max_width=width,
+        )
         self._put_text(
             frame_bgr,
             value,
             x,
-            y + 24,
-            scale=0.54,
+            y + (16 if compact else 24),
+            scale=0.34 if compact else 0.54,
             color=value_color,
             thickness=1,
             max_width=width,
@@ -2101,6 +2374,12 @@ class OverlayRenderer:
         return f"{value:.1f}%"
 
     @staticmethod
+    def _format_compact_percentage(value: float | None) -> str:
+        if value is None:
+            return "N/A"
+        return f"{value:.0f}%"
+
+    @staticmethod
     def _format_change(value: int | None) -> str:
         if value is None:
             return "N/A"
@@ -2125,6 +2404,18 @@ class OverlayRenderer:
         return f"{value:.1f} deg"
 
     @staticmethod
+    def _format_compact_angle(value: float | None) -> str:
+        if value is None:
+            return "N/A"
+        return f"{value:.0f}"
+
+    @staticmethod
+    def _format_fps(value: float | None) -> str:
+        if value is None:
+            return "N/A"
+        return f"{value:.1f}"
+
+    @staticmethod
     def _format_angle_change(value: float | None) -> str:
         if value is None:
             return "N/A"
@@ -2135,6 +2426,20 @@ class OverlayRenderer:
         if not value:
             return "none"
         return value.replace("_", " ")
+
+    def _format_issue_totals_line(self, issue_totals: dict[str, int]) -> str:
+        if not issue_totals:
+            return "Issue totals: none recorded"
+
+        parts = []
+        for issue, count in list(issue_totals.items())[:3]:
+            parts.append(f"{self._format_issue(issue)} {count}")
+        return "Issue totals: " + " | ".join(parts)
+
+    def _format_fps_summary(self, snapshot) -> str:
+        latest = self._format_fps(getattr(snapshot, "latest_avg_fps", None))
+        overall = self._format_fps(getattr(snapshot, "avg_fps_overall", None))
+        return f"FPS: latest {latest} | overall average {overall}"
 
     @staticmethod
     def _camera_fallback_label(index: int) -> str:
@@ -2190,5 +2495,18 @@ class OverlayRenderer:
                 return (
                     f"{date_part[0:4]}-{date_part[4:6]}-{date_part[6:8]} "
                     f"{time_part[0:2]}:{time_part[2:4]}:{time_part[4:6]}"
+                )
+        return value
+
+    @staticmethod
+    def _format_short_session_timestamp(value: str | None) -> str:
+        if not value:
+            return "N/A"
+        if len(value) == 15 and "_" in value:
+            date_part, time_part = value.split("_", maxsplit=1)
+            if len(date_part) == 8 and len(time_part) == 6:
+                return (
+                    f"{date_part[4:6]}-{date_part[6:8]} "
+                    f"{time_part[0:2]}:{time_part[2:4]}"
                 )
         return value

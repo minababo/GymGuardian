@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 import os
 from pathlib import Path
@@ -38,15 +38,34 @@ class AnalyticsSnapshot:
     latest_min_knee_angle: Optional[float] = None
     latest_avg_ankle_angle: Optional[float] = None
     latest_avg_torso_angle: Optional[float] = None
+    latest_avg_fps: Optional[float] = None
     latest_most_common_issue: Optional[str] = None
     previous_timestamp: Optional[str] = None
     previous_rep_count: Optional[int] = None
     rep_count_change: Optional[int] = None
     bad_rep_percentage_change: Optional[float] = None
     avg_knee_angle_change: Optional[float] = None
+    avg_fps_overall: Optional[float] = None
+    trend_sessions: tuple["AnalyticsTrendItem", ...] = field(default_factory=tuple)
+    issue_totals: dict[str, int] = field(default_factory=dict)
     main_concern: Optional[str] = None
     suggested_improvement: Optional[str] = None
     focus_area: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class AnalyticsTrendItem:
+    """Compact session row used for analytics trend display and export."""
+
+    folder_name: str
+    rep_count: int
+    bad_rep_count: int
+    bad_rep_percentage: Optional[float]
+    avg_knee_angle: Optional[float]
+    avg_ankle_angle: Optional[float]
+    avg_torso_angle: Optional[float]
+    avg_fps: Optional[float]
+    most_common_issue: Optional[str]
 
 
 @dataclass(frozen=True)
@@ -61,6 +80,8 @@ class AnalyticsSessionItem:
     min_knee_angle: Optional[float]
     avg_ankle_angle: Optional[float]
     avg_torso_angle: Optional[float]
+    avg_fps: Optional[float]
+    issue_counts: dict[str, int]
     most_common_issue: Optional[str]
 
 
@@ -146,6 +167,13 @@ def load_analytics_snapshot(sessions_dir: Path) -> AnalyticsSnapshot:
     main_concern, suggested_improvement, focus_area = build_recommendation(
         latest.most_common_issue
     )
+    trend_sessions = tuple(
+        _build_trend_item(session) for session in meaningful_sessions[:15]
+    )
+    issue_totals = _aggregate_issue_counts(meaningful_sessions)
+    avg_fps_overall = _average_optional(
+        [session.avg_fps for session in meaningful_sessions]
+    )
 
     return AnalyticsSnapshot(
         total_sessions=len(recent_sessions),
@@ -158,12 +186,16 @@ def load_analytics_snapshot(sessions_dir: Path) -> AnalyticsSnapshot:
         latest_min_knee_angle=latest.min_knee_angle,
         latest_avg_ankle_angle=latest.avg_ankle_angle,
         latest_avg_torso_angle=latest.avg_torso_angle,
+        latest_avg_fps=latest.avg_fps,
         latest_most_common_issue=latest.most_common_issue,
         previous_timestamp=previous.folder_name if previous else None,
         previous_rep_count=previous.rep_count if previous else None,
         rep_count_change=rep_count_change,
         bad_rep_percentage_change=bad_rep_percentage_change,
         avg_knee_angle_change=avg_knee_angle_change,
+        avg_fps_overall=avg_fps_overall,
+        trend_sessions=trend_sessions,
+        issue_totals=issue_totals,
         main_concern=main_concern,
         suggested_improvement=suggested_improvement,
         focus_area=focus_area,
@@ -228,6 +260,8 @@ def _load_analytics_sessions(
                 min_knee_angle=_safe_float(data.get("min_knee_angle")),
                 avg_ankle_angle=_safe_float(data.get("avg_ankle_angle")),
                 avg_torso_angle=_safe_float(data.get("avg_torso_angle")),
+                avg_fps=_safe_float(data.get("avg_fps")),
+                issue_counts=_safe_issue_counts(data.get("issue_counts")),
                 most_common_issue=most_common_issue,
             )
         )
@@ -280,3 +314,56 @@ def _safe_float(value) -> Optional[float]:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _safe_issue_counts(value) -> dict[str, int]:
+    if not isinstance(value, dict):
+        return {}
+
+    issue_counts: dict[str, int] = {}
+    for issue, count in value.items():
+        issue_name = str(issue).strip()
+        if not issue_name:
+            continue
+        safe_count = _safe_int(count)
+        if safe_count is None or safe_count <= 0:
+            continue
+        issue_counts[issue_name] = safe_count
+    return issue_counts
+
+
+def _aggregate_issue_counts(
+    sessions: list[AnalyticsSessionItem],
+) -> dict[str, int]:
+    totals: dict[str, int] = {}
+    for session in sessions:
+        for issue, count in session.issue_counts.items():
+            totals[issue] = totals.get(issue, 0) + count
+
+    return dict(
+        sorted(
+            totals.items(),
+            key=lambda item: (-item[1], item[0]),
+        )
+    )
+
+
+def _build_trend_item(session: AnalyticsSessionItem) -> AnalyticsTrendItem:
+    return AnalyticsTrendItem(
+        folder_name=session.folder_name,
+        rep_count=session.rep_count,
+        bad_rep_count=session.bad_rep_count,
+        bad_rep_percentage=bad_rep_percentage(session.rep_count, session.bad_rep_count),
+        avg_knee_angle=session.avg_knee_angle,
+        avg_ankle_angle=session.avg_ankle_angle,
+        avg_torso_angle=session.avg_torso_angle,
+        avg_fps=session.avg_fps,
+        most_common_issue=session.most_common_issue,
+    )
+
+
+def _average_optional(values: list[Optional[float]]) -> Optional[float]:
+    valid_values = [value for value in values if value is not None]
+    if not valid_values:
+        return None
+    return round(sum(valid_values) / len(valid_values), 2)
