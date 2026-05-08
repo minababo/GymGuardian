@@ -41,6 +41,7 @@ class CalibrationProfile:
 class AppSettings:
     theme: str = "light"
     hide_incomplete_sessions: bool = False
+    camera_index: int = 0
 
 
 def load_calibration_profile() -> CalibrationProfile | None:
@@ -91,6 +92,7 @@ def load_app_settings() -> AppSettings:
         return AppSettings(
             theme=theme,
             hide_incomplete_sessions=bool(data.get("hide_incomplete_sessions", False)),
+            camera_index=_normalize_camera_index(data.get("camera_index", 0)),
         )
     except (OSError, TypeError, ValueError, json.JSONDecodeError):
         return AppSettings()
@@ -101,6 +103,7 @@ def save_app_settings(settings: AppSettings) -> AppSettings:
     normalized = AppSettings(
         theme=settings.theme if settings.theme in ("light", "dark") else "light",
         hide_incomplete_sessions=bool(settings.hide_incomplete_sessions),
+        camera_index=_normalize_camera_index(settings.camera_index),
     )
     SETTINGS_FILE.write_text(
         json.dumps(asdict(normalized), indent=2),
@@ -120,6 +123,17 @@ def toggle_hide_incomplete_sessions(settings: AppSettings) -> AppSettings:
             settings,
             hide_incomplete_sessions=not settings.hide_incomplete_sessions,
         )
+    )
+
+
+def switch_camera_index(settings: AppSettings) -> AppSettings:
+    next_index = (_normalize_camera_index(settings.camera_index) + 1) % 3
+    return save_app_settings(replace(settings, camera_index=next_index))
+
+
+def set_camera_index(settings: AppSettings, camera_index: int) -> AppSettings:
+    return save_app_settings(
+        replace(settings, camera_index=_normalize_camera_index(camera_index))
     )
 
 
@@ -197,3 +211,11 @@ def _mean(values: list[float]) -> float:
 
 def _clamp(value: float, minimum: float, maximum: float) -> float:
     return max(minimum, min(maximum, value))
+
+
+def _normalize_camera_index(value) -> int:
+    try:
+        camera_index = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return camera_index if 0 <= camera_index <= 2 else 0
