@@ -35,6 +35,7 @@ from session.browser import (
     open_session_folder,
     open_session_video,
 )
+from session.analytics_export import export_analytics_report
 from session.recorder import SessionRecorder
 from session.summary import SessionSummary
 from ui.overlay import OverlayRenderer
@@ -113,13 +114,6 @@ def _wait_for_key_or_close(delay_ms: int) -> int | None:
 
 
 def _blank_screen() -> np.ndarray:
-    window_size = _get_window_client_size(WINDOW_NAME)
-    if window_size is not None:
-        window_w, window_h = window_size
-        canvas = np.empty((window_h, window_w, 3), dtype=np.uint8)
-        canvas[:] = APP_BG
-        return canvas
-
     canvas = np.empty((FRAME_HEIGHT, FRAME_WIDTH, 3), dtype=np.uint8)
     canvas[:] = APP_BG
     return canvas
@@ -624,6 +618,16 @@ def run_analytics(overlay: OverlayRenderer) -> bool:
         if key in (ord("r"), ord("R")):
             snapshot = load_analytics_snapshot(SESSIONS_DIR)
             calibration_profile = load_calibration_profile()
+        elif key in (ord("e"), ord("E")):
+            report_path = export_analytics_report(
+                snapshot,
+                calibration_profile=calibration_profile,
+            )
+            print(f"Analytics report exported: {report_path}")
+            try:
+                os.startfile(str(report_path))
+            except (AttributeError, OSError) as exc:
+                print(f"Warning: could not open analytics report: {exc}")
 
 
 def run_calibration(overlay: OverlayRenderer) -> bool:
