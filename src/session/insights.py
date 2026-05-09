@@ -16,7 +16,7 @@ def build_recommendation(issue: Optional[str]) -> tuple[str, str, str]:
     if _issue_matches(normalized_issue, ("ankle", "foot", "stability")):
         return (
             "Ankle control is the main concern.",
-            "Improve ankle stability and foot positioning.",
+            "Keep feet planted and let knees track over toes without heel lift.",
             "Ankle control",
         )
     if _issue_matches(normalized_issue, ("torso", "back", "lean", "posture")):

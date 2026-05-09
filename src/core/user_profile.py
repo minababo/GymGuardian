@@ -28,12 +28,32 @@ class CalibrationProfile:
     calibrated_up_angle: float
 
     def to_squat_config(self) -> SquatConfig:
+        calibrated_up_angle = self.calibrated_up_angle
+        calibrated_shallow_angle = min(
+            self.calibrated_shallow_angle,
+            SQUAT_CONFIG.shallow_knee_angle,
+        )
+        calibrated_rep_bottom_angle = max(
+            self.calibrated_rep_bottom_angle,
+            SQUAT_CONFIG.rep_bottom_knee_angle,
+        )
+        calibrated_rep_bottom_angle = min(
+            calibrated_rep_bottom_angle,
+            calibrated_up_angle - 8.0,
+        )
+        calibrated_down_angle = min(
+            self.calibrated_down_angle,
+            calibrated_rep_bottom_angle - 20.0,
+        )
+        if calibrated_up_angle <= calibrated_rep_bottom_angle + 5.0:
+            return SQUAT_CONFIG
+
         return replace(
             SQUAT_CONFIG,
-            down_knee_angle=self.calibrated_down_angle,
-            shallow_knee_angle=self.calibrated_shallow_angle,
-            rep_bottom_knee_angle=self.calibrated_rep_bottom_angle,
-            up_knee_angle=self.calibrated_up_angle,
+            down_knee_angle=calibrated_down_angle,
+            shallow_knee_angle=calibrated_shallow_angle,
+            rep_bottom_knee_angle=calibrated_rep_bottom_angle,
+            up_knee_angle=calibrated_up_angle,
         )
 
 
