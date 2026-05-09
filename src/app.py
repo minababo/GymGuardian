@@ -228,13 +228,13 @@ def _current_feedback(
 
 def _rep_feedback(issues: tuple[str, ...], is_bad: bool) -> tuple[str, str]:
     if is_bad and "too_shallow" in issues:
-        return "Bad rep: increase squat depth", "bad"
+        return "Bad rep: lower hips and bend knees more", "bad"
     if "torso_lean" in issues and "ankle_control" in issues:
-        return "Rep logged: improve torso and ankle control", "warning"
+        return "Rep logged: feet flat, knees over toes, chest up", "warning"
     if "torso_lean" in issues:
-        return "Rep logged: reduce forward torso lean", "warning"
+        return "Rep logged: brace core and keep chest up", "warning"
     if "ankle_control" in issues:
-        return "Rep logged: improve ankle control", "warning"
+        return "Rep logged: keep feet flat; knees track over toes", "warning"
     return "Rep accepted", "ok"
 
 
