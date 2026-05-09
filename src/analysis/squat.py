@@ -17,6 +17,14 @@ class SquatState:
     ankle_angle: Optional[float] = None
     torso_angle: Optional[float] = None
     pose_visible: bool = False
+    quality_knee_angle: Optional[float] = None
+
+
+@dataclass(frozen=True)
+class _AngleCandidate:
+    side: str
+    angle: float
+    confidence: float
 
 
 class SquatStateAnalyzer:
@@ -26,9 +34,11 @@ class SquatStateAnalyzer:
         self._config = config or SQUAT_CONFIG
         window = max(1, self._config.angle_smoothing_window)
         self._knee_history: Deque[float] = deque(maxlen=window)
+        self._quality_knee_history: Deque[float] = deque(maxlen=window)
         self._ankle_history: Deque[float] = deque(maxlen=window)
         self._torso_history: Deque[float] = deque(maxlen=window)
         self._missing_pose_frames = 0
+        self._active_side: Optional[str] = None
 
     def classify(self, pose_result) -> SquatState:
         # pose_result.pose_landmarks -> list of poses; each pose -> list of landmarks
@@ -41,22 +51,45 @@ class SquatStateAnalyzer:
 
         landmarks = pose_result.pose_landmarks[0]
 
-        raw_knee_angle = self._angle_if_visible(landmarks, 23, 25, 27)
-        if raw_knee_angle is None:
-            # Treat partial lower-body detection as no pose for rep logic.
+        left_knee = self._angle_candidate_if_visible(landmarks, "left", 23, 25, 27)
+        right_knee = self._angle_candidate_if_visible(landmarks, "right", 24, 26, 28)
+        knee_candidate = self._select_angle_candidate(
+            left_knee,
+            right_knee,
+            prefer_lower=True,
+        )
+        if knee_candidate is None:
+            # Treat missing lower-body landmarks on both sides as no pose for rep logic.
             self._mark_missing_pose()
             return SquatState(label="no_pose", knee_angle=None)
 
-        knee_angle = self._smooth_metric(self._knee_history, raw_knee_angle)
-        ankle_angle = self._maybe_smooth_angle(
-            self._ankle_history,
-            self._angle_if_visible(landmarks, 25, 27, 31),
-            self._angle_if_visible(landmarks, 26, 28, 32),
+        self._sync_active_side(knee_candidate.side)
+        knee_angle = self._smooth_metric(self._knee_history, knee_candidate.angle)
+        quality_knee_angle = self._smooth_metric(
+            self._quality_knee_history,
+            self._quality_knee_angle(knee_candidate, left_knee, right_knee),
         )
-        torso_angle = self._maybe_smooth_angle(
-            self._torso_history,
-            self._torso_angle_if_visible(landmarks, 11, 23),
-            self._torso_angle_if_visible(landmarks, 12, 24),
+
+        ankle_candidate = self._side_candidate_or_best(
+            landmarks,
+            knee_candidate.side,
+            ("left", 25, 27, 31),
+            ("right", 26, 28, 32),
+            prefer_lower=False,
+        )
+        torso_candidate = self._torso_side_candidate_or_best(
+            landmarks,
+            knee_candidate.side,
+        )
+        ankle_angle = (
+            self._smooth_metric(self._ankle_history, ankle_candidate.angle)
+            if ankle_candidate is not None
+            else None
+        )
+        torso_angle = (
+            self._smooth_metric(self._torso_history, torso_candidate.angle)
+            if torso_candidate is not None
+            else None
         )
 
         self._missing_pose_frames = 0
@@ -73,26 +106,117 @@ class SquatStateAnalyzer:
             ankle_angle=ankle_angle,
             torso_angle=torso_angle,
             pose_visible=True,
+            quality_knee_angle=quality_knee_angle,
         )
 
-    def _angle_if_visible(
-        self, landmarks, point_a: int, point_b: int, point_c: int
-    ) -> Optional[float]:
+    def _angle_candidate_if_visible(
+        self, landmarks, side: str, point_a: int, point_b: int, point_c: int
+    ) -> Optional[_AngleCandidate]:
         if not self._landmarks_visible(landmarks, point_a, point_b, point_c):
             return None
 
         landmark_a = landmarks[point_a]
         landmark_b = landmarks[point_b]
         landmark_c = landmarks[point_c]
-        return _angle_degrees(
+        angle = _angle_degrees(
             (landmark_a.x, landmark_a.y),
             (landmark_b.x, landmark_b.y),
             (landmark_c.x, landmark_c.y),
         )
+        confidence = min(
+            self._landmark_confidence(landmark_a),
+            self._landmark_confidence(landmark_b),
+            self._landmark_confidence(landmark_c),
+        )
+        return _AngleCandidate(side=side, angle=angle, confidence=confidence)
+
+    def _select_angle_candidate(
+        self,
+        first: Optional[_AngleCandidate],
+        second: Optional[_AngleCandidate],
+        *,
+        prefer_lower: bool,
+    ) -> Optional[_AngleCandidate]:
+        candidates = [candidate for candidate in (first, second) if candidate is not None]
+        if not candidates:
+            return None
+        if len(candidates) == 1:
+            return candidates[0]
+
+        left, right = candidates
+        if abs(left.confidence - right.confidence) >= 0.15:
+            return max(candidates, key=lambda candidate: candidate.confidence)
+        if prefer_lower:
+            return min(candidates, key=lambda candidate: candidate.angle)
+        return max(candidates, key=lambda candidate: candidate.confidence)
+
+    def _quality_knee_angle(
+        self,
+        selected: _AngleCandidate,
+        first: Optional[_AngleCandidate],
+        second: Optional[_AngleCandidate],
+    ) -> float:
+        candidates = [candidate for candidate in (first, second) if candidate is not None]
+        if len(candidates) <= 1:
+            return selected.angle
+
+        best_confidence = max(candidate.confidence for candidate in candidates)
+        reliable = [
+            candidate
+            for candidate in candidates
+            if best_confidence - candidate.confidence <= 0.12
+        ]
+        if not reliable:
+            return selected.angle
+        # Quality checks are conservative: one noisy-looking deep side should not
+        # hide a shallow rep when the other side remains reliably visible.
+        return max(candidate.angle for candidate in reliable)
+
+    def _side_candidate_or_best(
+        self,
+        landmarks,
+        preferred_side: str,
+        left_points: tuple[str, int, int, int],
+        right_points: tuple[str, int, int, int],
+        *,
+        prefer_lower: bool,
+    ) -> Optional[_AngleCandidate]:
+        left = self._angle_candidate_if_visible(landmarks, *left_points)
+        right = self._angle_candidate_if_visible(landmarks, *right_points)
+        preferred = left if preferred_side == "left" else right
+        if preferred is not None:
+            return preferred
+        return self._select_angle_candidate(left, right, prefer_lower=prefer_lower)
+
+    def _torso_side_candidate_or_best(
+        self, landmarks, preferred_side: str
+    ) -> Optional[_AngleCandidate]:
+        left = self._torso_candidate_if_visible(landmarks, "left", 11, 23)
+        right = self._torso_candidate_if_visible(landmarks, "right", 12, 24)
+        preferred = left if preferred_side == "left" else right
+        if preferred is not None:
+            return preferred
+        return self._select_angle_candidate(left, right, prefer_lower=False)
+
+    def _angle_if_visible(
+        self, landmarks, point_a: int, point_b: int, point_c: int
+    ) -> Optional[float]:
+        candidate = self._angle_candidate_if_visible(
+            landmarks, "unknown", point_a, point_b, point_c
+        )
+        return candidate.angle if candidate is not None else None
 
     def _torso_angle_if_visible(
         self, landmarks, shoulder_i: int, hip_i: int
     ) -> Optional[float]:
+        candidate = self._torso_candidate_if_visible(
+            landmarks, "unknown", shoulder_i, hip_i
+        )
+        return candidate.angle if candidate is not None else None
+
+    def _torso_candidate_if_visible(
+        self, landmarks, side: str, shoulder_i: int, hip_i: int
+    ) -> Optional[_AngleCandidate]:
         if not self._landmarks_visible(landmarks, shoulder_i, hip_i):
             return None
 
@@ -100,14 +224,20 @@ class SquatStateAnalyzer:
         hip = landmarks[hip_i]
         dx = shoulder.x - hip.x
         dy = shoulder.y - hip.y
-        if dx == 0 and dy == 0:
-            return 0.0
 
         vertical_span = abs(dy)
-        if vertical_span == 0:
-            return 90.0
+        if dx == 0 and dy == 0:
+            angle = 0.0
+        elif vertical_span == 0:
+            angle = 90.0
+        else:
+            angle = math.degrees(math.atan2(abs(dx), vertical_span))
 
-        return math.degrees(math.atan2(abs(dx), vertical_span))
+        confidence = min(
+            self._landmark_confidence(shoulder),
+            self._landmark_confidence(hip),
+        )
+        return _AngleCandidate(side=side, angle=angle, confidence=confidence)
 
     def _maybe_smooth_angle(
         self,
@@ -124,16 +254,42 @@ class SquatStateAnalyzer:
         history.append(value)
         return sum(history) / len(history)
 
+    def _sync_active_side(self, side: str) -> None:
+        if self._active_side is not None and self._active_side != side:
+            self._knee_history.clear()
+            self._quality_knee_history.clear()
+            self._ankle_history.clear()
+            self._torso_history.clear()
+        self._active_side = side
+
     def _mark_missing_pose(self) -> None:
         self._missing_pose_frames += 1
         if self._missing_pose_frames >= self._config.no_pose_reset_frames:
             self._knee_history.clear()
+            self._quality_knee_history.clear()
             self._ankle_history.clear()
             self._torso_history.clear()
+            self._active_side = None
 
     def _landmarks_visible(self, landmarks, *indices: int) -> bool:
-        visibilities = [getattr(landmarks[index], "visibility", 1.0) for index in indices]
-        return min(visibilities) >= self._config.landmark_visibility_threshold
+        if not landmarks or max(indices) >= len(landmarks):
+            return False
+        confidences = [self._landmark_confidence(landmarks[index]) for index in indices]
+        coords_ok = all(
+            math.isfinite(getattr(landmarks[index], "x", float("nan")))
+            and math.isfinite(getattr(landmarks[index], "y", float("nan")))
+            for index in indices
+        )
+        return coords_ok and min(confidences) >= self._config.landmark_visibility_threshold
+
+    @staticmethod
+    def _landmark_confidence(landmark) -> float:
+        visibility = getattr(landmark, "visibility", 1.0)
+        presence = getattr(landmark, "presence", visibility)
+        try:
+            return min(float(visibility), float(presence))
+        except (TypeError, ValueError):
+            return 0.0
 
 
 
@@ -177,7 +333,7 @@ class SquatRepCounter:
         self._missing_pose_frames = 0
         self._in_rep = False
         self._ready_for_rep = False
-        self._rep_start_time = 0.0
+        self._rep_start_time: Optional[float] = None
         self._min_knee_angle: Optional[float] = None
         self._min_ankle_angle: Optional[float] = None
         self._max_torso_angle: Optional[float] = None
@@ -197,6 +353,7 @@ class SquatRepCounter:
             if not self._in_rep and self._standing_frames >= self._config.ready_standing_frames:
                 self._ready_for_rep = True
                 self._bottom_frames = 0
+                self._rep_start_time = None
                 self._clear_cycle_metrics()
         else:
             self._standing_frames = 0
@@ -204,7 +361,8 @@ class SquatRepCounter:
         if self._in_rep:
             self._update_cycle_metrics(squat_state)
             if (
-                timestamp - self._rep_start_time >= self._config.min_rep_seconds
+                self._rep_start_time is not None
+                and timestamp - self._rep_start_time >= self._config.min_rep_seconds
                 and angle >= self._config.up_knee_angle
             ):
                 return self._complete_rep()
@@ -214,13 +372,16 @@ class SquatRepCounter:
             return RepCounterUpdate()
 
         if angle < self._config.up_knee_angle:
+            if self._rep_start_time is None:
+                self._rep_start_time = timestamp
             self._update_cycle_metrics(squat_state)
 
         if angle <= self._config.rep_bottom_knee_angle:
             self._bottom_frames += 1
             if self._bottom_frames >= self._config.down_hold_frames:
                 self._in_rep = True
-                self._rep_start_time = timestamp
+                if self._rep_start_time is None:
+                    self._rep_start_time = timestamp
                 return RepCounterUpdate(
                     rep_started=True,
                     min_knee_angle=self._min_knee_angle,
@@ -241,7 +402,11 @@ class SquatRepCounter:
         return RepCounterUpdate()
 
     def _update_cycle_metrics(self, squat_state: SquatState) -> None:
-        knee_angle = squat_state.knee_angle
+        knee_angle = (
+            squat_state.quality_knee_angle
+            if squat_state.quality_knee_angle is not None
+            else squat_state.knee_angle
+        )
         if knee_angle is not None:
             if self._min_knee_angle is None:
                 self._min_knee_angle = knee_angle
@@ -311,5 +476,5 @@ class SquatRepCounter:
         self._standing_frames = 0
         self._in_rep = False
         self._ready_for_rep = keep_ready
-        self._rep_start_time = 0.0
+        self._rep_start_time = None
         self._clear_cycle_metrics()

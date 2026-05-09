@@ -15,18 +15,18 @@ class PoseConfig:
 
 @dataclass(frozen=True)
 class SquatConfig:
-    down_knee_angle: float = 100.0
+    down_knee_angle: float = 105.0
     up_knee_angle: float = 160.0
-    rep_bottom_knee_angle: float = 140.0
+    rep_bottom_knee_angle: float = 150.0
     shallow_knee_angle: float = 110.0
-    ankle_control_angle: float = 88.0
+    ankle_control_angle: float = 172.0
     torso_lean_angle: float = 34.0
-    landmark_visibility_threshold: float = 0.55
+    landmark_visibility_threshold: float = 0.45
     angle_smoothing_window: int = 5
-    down_hold_frames: int = 6
-    ready_standing_frames: int = 3
+    down_hold_frames: int = 4
+    ready_standing_frames: int = 2
     no_pose_reset_frames: int = 4
-    min_rep_seconds: float = 0.6
+    min_rep_seconds: float = 0.45
 
 
 @dataclass(frozen=True)
