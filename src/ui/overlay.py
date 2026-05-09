@@ -120,6 +120,11 @@ class OverlayRenderer:
             feedback_level,
             calibration_profile,
         )
+        if feedback_message and (
+            feedback_level in {"ok", "bad"}
+            or feedback_message.startswith("Rep logged")
+        ):
+            self._draw_feedback(frame_bgr, feedback_message, feedback_level)
 
     def draw_dashboard(
         self,
@@ -170,10 +175,10 @@ class OverlayRenderer:
             "GymGuardian",
             shell_x + 58,
             shell_y + 150,
-            scale=1.48,
+            scale=1.38,
             color=self.PRIMARY,
             thickness=2,
-            max_width=470,
+            max_width=390,
         )
         self._put_text(
             frame_bgr,
@@ -192,7 +197,7 @@ class OverlayRenderer:
             camera_options,
             include_index=True,
         )
-        insight_w = 170
+        insight_w = 190
         insight_gap = 14
         insight_x = shell_x + shell_w - (insight_w * 3) - (insight_gap * 2) - 48
         insight_y = shell_y + 58
@@ -1268,6 +1273,7 @@ class OverlayRenderer:
         )
 
     def _draw_progress_panel(self, frame_bgr, x, y, width, height, snapshot) -> None:
+        compact = height < 160
         self._draw_panel(
             frame_bgr,
             x,
@@ -1282,8 +1288,8 @@ class OverlayRenderer:
             frame_bgr,
             "Progress Comparison",
             x + 24,
-            y + 34,
-            scale=0.66,
+            y + (30 if compact else 34),
+            scale=0.54 if compact else 0.66,
             color=self.TEXT,
             thickness=1,
             max_width=width - 48,
@@ -1292,7 +1298,7 @@ class OverlayRenderer:
             frame_bgr,
             f"Previous: {self._format_session_timestamp(snapshot.previous_timestamp)}",
             x + 24,
-            y + 58,
+            y + (52 if compact else 58),
             scale=0.42 if height < 160 else 0.5,
             color=self.MUTED,
             thickness=1,
@@ -1301,7 +1307,6 @@ class OverlayRenderer:
 
         card_gap = 10
         card_w = (width - 48 - (card_gap * 2)) // 3
-        compact = height < 160
         card_y = y + 76 if compact else y + 92
         card_h = 44 if compact else 68
         self._draw_metric_tile(
@@ -1515,9 +1520,9 @@ class OverlayRenderer:
     ) -> None:
         panel_x = 24
         panel_y = 24
-        panel_w = 408
-        panel_h = 170
-        pad = 16
+        panel_w = 520
+        panel_h = 210
+        pad = 18
 
         self._draw_panel(
             frame_bgr,
@@ -1547,7 +1552,7 @@ class OverlayRenderer:
             frame_bgr,
             panel_x + panel_w - 166,
             panel_y + 16,
-            146,
+            150,
             24,
             calibration_profile,
             compact=True,
@@ -1557,16 +1562,16 @@ class OverlayRenderer:
             frame_bgr,
             state_text,
             panel_x + pad,
-            panel_y + 56,
-            scale=0.66,
+            panel_y + 66,
+            scale=0.82,
             color=state_color,
             thickness=2,
             max_width=panel_w - (pad * 2),
         )
 
-        chip_y = panel_y + 70
-        chip_w = 116
-        chip_gap = 8
+        chip_y = panel_y + 86
+        chip_w = 142
+        chip_gap = 12
         self._draw_angle_chip(
             frame_bgr, panel_x + pad, chip_y, chip_w, "Knee", squat_state.knee_angle
         )
@@ -1592,7 +1597,7 @@ class OverlayRenderer:
                 self._draw_live_focus_text(
                     frame_bgr,
                     panel_x + pad,
-                    panel_y + 146,
+                    panel_y + 184,
                     panel_w - (pad * 2),
                     feedback_message,
                     feedback_level,
@@ -1602,17 +1607,17 @@ class OverlayRenderer:
         self._draw_compact_count(
             frame_bgr,
             panel_x + pad,
-            panel_y + 104,
-            96,
+            panel_y + 126,
+            118,
             "Reps",
             str(rep_counter.rep_count),
             self.LIVE_TEXT,
         )
         self._draw_compact_count(
             frame_bgr,
-            panel_x + pad + 106,
-            panel_y + 104,
-            96,
+            panel_x + pad + 132,
+            panel_y + 126,
+            118,
             "Bad",
             str(rep_counter.bad_rep_count),
             self.ERROR if rep_counter.bad_rep_count else self.LIVE_TEXT,
@@ -1622,7 +1627,7 @@ class OverlayRenderer:
             self._draw_live_focus_text(
                 frame_bgr,
                 panel_x + pad,
-                panel_y + 160,
+                panel_y + 190,
                 panel_w - (pad * 2),
                 feedback_message,
                 feedback_level,
@@ -1633,8 +1638,8 @@ class OverlayRenderer:
                 frame_bgr,
                 f"Last rep: {last_text}",
                 panel_x + pad,
-                panel_y + 160,
-                scale=0.36,
+                panel_y + 190,
+                scale=0.42,
                 color=self.LIVE_MUTED,
                 thickness=1,
                 max_width=panel_w - (pad * 2),
@@ -1699,7 +1704,7 @@ class OverlayRenderer:
             message,
             x,
             y,
-            0.36,
+            0.48,
             color,
             thickness=1,
             max_width=width,
@@ -1797,17 +1802,19 @@ class OverlayRenderer:
             "info": self.TEXT,
         }
         color = colors.get(feedback_level, colors["info"])
-        scale = 0.72
-        thickness = 1
+        scale = 1.08
+        thickness = 2
         _, frame_w = frame_bgr.shape[:2]
-        max_panel_w = min(430, max(260, frame_w - 520))
-        display_text = self._fit_text(message, max_panel_w - 36, scale, thickness)
-        text_w = self._text_width(display_text, scale, thickness)
-        text_h = self._text_height(display_text, scale, thickness)
-        pad_x = 18
-        pad_y = 14
-        panel_w = max(250, text_w + (pad_x * 2))
-        panel_h = text_h + (pad_y * 2)
+        max_panel_w = min(680, max(360, frame_w - 560))
+        pad_x = 24
+        pad_y = 18
+        text_max_w = max_panel_w - (pad_x * 2)
+        lines = self._wrap_text(message, text_max_w, scale, thickness, max_lines=3)
+        text_w = max(self._text_width(line, scale, thickness) for line in lines)
+        text_h = self._text_height("Ag", scale, thickness)
+        line_gap = 8
+        panel_w = max(360, min(max_panel_w, text_w + (pad_x * 2)))
+        panel_h = (text_h * len(lines)) + (line_gap * (len(lines) - 1)) + (pad_y * 2)
         panel_x = frame_w - panel_w - 24
         panel_y = 24
 
@@ -1819,18 +1826,22 @@ class OverlayRenderer:
             panel_h,
             color=self.BG_SOFT,
             border_color=color,
-            alpha=0.84,
+            alpha=0.92,
+            radius=18,
         )
-        self._put_text(
-            frame_bgr,
-            display_text,
-            panel_x + pad_x,
-            panel_y + pad_y + text_h,
-            scale=scale,
-            color=color,
-            thickness=thickness,
-            max_width=panel_w - (pad_x * 2),
-        )
+        text_y = panel_y + pad_y + text_h
+        for line in lines:
+            self._put_text(
+                frame_bgr,
+                line,
+                panel_x + pad_x,
+                text_y,
+                scale=scale,
+                color=color,
+                thickness=thickness,
+                max_width=None,
+            )
+            text_y += text_h + line_gap
 
     def _draw_pill(
         self,
@@ -1880,9 +1891,9 @@ class OverlayRenderer:
             alpha=0.9,
             radius=16,
         )
-        self._put_text(frame_bgr, label.upper(), x + 18, y + 28, 0.36, self.MUTED)
+        self._put_text(frame_bgr, label.upper(), x + 18, y + 28, 0.34, self.MUTED)
         self._put_text(
-            frame_bgr, value, x + 18, y + 58, 0.5, self.TEXT, max_width=width - 36
+            frame_bgr, value, x + 18, y + 58, 0.43, self.TEXT, max_width=width - 36
         )
 
     def _draw_action_card(
@@ -2322,6 +2333,56 @@ class OverlayRenderer:
             else:
                 high = mid - 1
         return text[:low].rstrip() + ellipsis
+
+    def _wrap_text(
+        self,
+        text: str,
+        max_width: int,
+        scale: float,
+        thickness: int,
+        *,
+        max_lines: int = 3,
+    ) -> list[str]:
+        if max_width <= 0:
+            return ["..."]
+
+        words = text.split()
+        if not words:
+            return [""]
+
+        lines: list[str] = []
+        current = ""
+        index = 0
+        while index < len(words):
+            word = words[index]
+            candidate = word if not current else f"{current} {word}"
+            if self._text_width(candidate, scale, thickness) <= max_width:
+                current = candidate
+                index += 1
+                continue
+
+            if current:
+                lines.append(current)
+                current = ""
+                if len(lines) >= max_lines:
+                    return lines[:max_lines]
+                continue
+
+            lines.append(self._fit_text(word, max_width, scale, thickness))
+            index += 1
+            if len(lines) >= max_lines:
+                return lines[:max_lines]
+
+        if current:
+            lines.append(current)
+
+        if len(lines) <= max_lines:
+            return lines
+
+        visible = lines[: max_lines - 1]
+        remaining = " ".join(lines[max_lines - 1 :])
+        visible.append(self._fit_text(remaining, max_width, scale, thickness))
+        return visible
 
     def _text_width(self, text: str, scale: float, thickness: int) -> int:
         font = self._load_font(self._font_size(scale), thickness > 1)
