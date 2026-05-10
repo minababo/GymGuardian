@@ -18,23 +18,23 @@ class OverlayRenderer:
     FONT_BOLD = Path(r"C:\Windows\Fonts\segoeuib.ttf")
 
     # Shared visual system. OpenCV uses BGR tuples.
-    BG = (229, 237, 233)
-    BG_SOFT = (218, 231, 225)
-    PANEL = (252, 253, 251)
-    PANEL_ALT = (237, 244, 240)
-    PANEL_STRONG = (221, 238, 229)
-    SELECTED = (199, 229, 213)
-    BORDER = (164, 187, 176)
-    BORDER_ACTIVE = (76, 145, 91)
+    BG = (239, 247, 242)
+    BG_SOFT = (250, 253, 250)
+    PANEL = (255, 255, 255)
+    PANEL_ALT = (248, 251, 249)
+    PANEL_STRONG = (229, 243, 234)
+    SELECTED = (212, 236, 219)
+    BORDER = (193, 211, 198)
+    BORDER_ACTIVE = (74, 142, 86)
 
-    PRIMARY = (54, 126, 72)
-    PRIMARY_SOFT = (191, 224, 205)
+    PRIMARY = (45, 119, 67)
+    PRIMARY_SOFT = (218, 239, 224)
     WARNING = (0, 143, 204)
     ERROR = (76, 86, 205)
     INFO = (196, 127, 66)
-    TEXT = (25, 35, 32)
-    MUTED = (76, 91, 86)
-    MUTED_DARK = (124, 139, 133)
+    TEXT = (28, 47, 38)
+    MUTED = (88, 108, 99)
+    MUTED_DARK = (138, 152, 145)
     LIVE_PANEL = (36, 47, 49)
     LIVE_CARD = (48, 60, 62)
     LIVE_BORDER = (102, 218, 150)
@@ -223,18 +223,18 @@ class OverlayRenderer:
 
         options = [
             ("S", "Start squat session", "Open webcam and begin form tracking"),
+            ("V", "Analyse local video", "Process newest file in input_videos"),
             ("C", "Calibrate squat depth", "Personalise thresholds with 2-3 squats"),
             ("A", "Open analytics dashboard", "View progress and recommendations"),
             ("B", "Browse saved sessions", "Review videos and session files"),
             ("G", "Open settings", "Theme, calibration, and browser display"),
-            ("Esc", "Quit application", "Close GymGuardian"),
         ]
 
-        card_gap = 14
+        card_gap = 10
         cards_x = shell_x + 58
-        cards_y = shell_y + 238
+        cards_y = shell_y + 248
         card_w = (shell_w - 116 - card_gap) // 2
-        card_h = 76
+        card_h = 64
         for index, (key, title, subtitle) in enumerate(options):
             col = index % 2
             row = index // 2
@@ -254,7 +254,7 @@ class OverlayRenderer:
                 frame_bgr,
                 notice_message,
                 shell_x + 62,
-                shell_y + shell_h - 58,
+                shell_y + 224,
                 scale=0.42,
                 color=self.WARNING,
                 thickness=1,
@@ -263,7 +263,7 @@ class OverlayRenderer:
 
         self._put_text(
             frame_bgr,
-            "Keyboard controlled desktop prototype. K switches camera source. Esc returns from any screen.",
+            "Keyboard desktop prototype. V analyses videos. K switches camera. Esc quits/returns.",
             shell_x + 62,
             shell_y + shell_h - 34,
             scale=0.47,
@@ -914,9 +914,9 @@ class OverlayRenderer:
             else "Showing all sessions"
         )
         calibration_value = (
-            "Adaptive thresholds active"
+            "Calibrated"
             if calibration_profile
-            else "Default thresholds active"
+            else "Default thresholds"
         )
         cards = [
             ("Theme", theme_value, "Press T to switch light/dark", self.PRIMARY),
@@ -1307,8 +1307,8 @@ class OverlayRenderer:
 
         card_gap = 10
         card_w = (width - 48 - (card_gap * 2)) // 3
-        card_y = y + 76 if compact else y + 92
-        card_h = 44 if compact else 68
+        card_y = y + 72 if compact else y + 92
+        card_h = 36 if compact else 68
         self._draw_metric_tile(
             frame_bgr,
             x + 24,
@@ -1319,7 +1319,7 @@ class OverlayRenderer:
             self._format_change(snapshot.rep_count_change),
             self._change_color(snapshot.rep_count_change, positive_is_good=True),
             label_scale=0.34 if compact else 0.42,
-            value_scale=0.42 if compact else 0.64,
+            value_scale=0.36 if compact else 0.64,
         )
         self._draw_metric_tile(
             frame_bgr,
@@ -1333,7 +1333,7 @@ class OverlayRenderer:
                 snapshot.bad_rep_percentage_change, positive_is_good=False
             ),
             label_scale=0.34 if compact else 0.42,
-            value_scale=0.34 if compact else 0.52,
+            value_scale=0.31 if compact else 0.52,
         )
         self._draw_metric_tile(
             frame_bgr,
@@ -1345,7 +1345,7 @@ class OverlayRenderer:
             self._format_angle_change(snapshot.avg_knee_angle_change),
             self.TEXT,
             label_scale=0.34 if compact else 0.42,
-            value_scale=0.34 if compact else 0.52,
+            value_scale=0.31 if compact else 0.52,
         )
 
         if not compact:
@@ -1465,9 +1465,14 @@ class OverlayRenderer:
         text = "Calibrated" if is_calibrated else "Default thresholds"
 
         if is_calibrated:
-            fill = (43, 58, 24)
-            border = (73, 110, 44)
-            text_color = self.PRIMARY if not live else self.LIVE_BORDER
+            if live or self.theme == "dark":
+                fill = (43, 58, 24)
+                border = (73, 110, 44)
+                text_color = self.LIVE_BORDER if live else self.PRIMARY
+            else:
+                fill = self.PRIMARY_SOFT
+                border = self.BORDER_ACTIVE
+                text_color = self.PRIMARY
         else:
             fill = self.LIVE_CARD if live else self.PANEL_ALT
             border = self.BORDER if not live else (78, 94, 98)
@@ -2106,14 +2111,14 @@ class OverlayRenderer:
             glow_alpha = 0.26
             footer_color = (68, 78, 32)
         else:
-            texture_color = (211, 224, 218)
-            texture_alpha = 0.24
-            header_color = (221, 234, 228)
-            header_border = (175, 198, 187)
-            glow_primary = (188, 222, 204)
-            glow_secondary = (217, 226, 229)
-            glow_alpha = 0.32
-            footer_color = (184, 215, 199)
+            texture_color = (231, 239, 234)
+            texture_alpha = 0.14
+            header_color = (248, 252, 249)
+            header_border = (199, 215, 203)
+            glow_primary = (224, 243, 230)
+            glow_secondary = (238, 245, 241)
+            glow_alpha = 0.24
+            footer_color = (206, 226, 213)
 
         texture = frame_bgr.copy()
         for x in range(-frame_h, frame_w, 92):
@@ -2144,6 +2149,21 @@ class OverlayRenderer:
     ) -> None:
         color = self.PANEL if color is None else color
         border_color = self.BORDER if border_color is None else border_color
+        is_live_panel = color in (self.LIVE_PANEL, self.LIVE_CARD)
+        if self.theme == "light" and not is_live_panel and width >= 180 and height >= 54:
+            shadow = frame_bgr.copy()
+            self._draw_rounded_rect(
+                shadow,
+                x + 4,
+                y + 6,
+                width,
+                height,
+                radius,
+                (178, 199, 185),
+                -1,
+            )
+            cv2.addWeighted(shadow, 0.10, frame_bgr, 0.90, 0, frame_bgr)
+
         overlay = frame_bgr.copy()
         self._draw_rounded_rect(overlay, x, y, width, height, radius, color, -1)
         cv2.addWeighted(overlay, alpha, frame_bgr, 1 - alpha, 0, frame_bgr)
@@ -2550,19 +2570,25 @@ class OverlayRenderer:
     def _format_session_timestamp(value: str | None) -> str:
         if not value:
             return "N/A"
+        prefix = ""
+        if value.startswith("video_"):
+            prefix = "Video "
+            value = value[len("video_") :]
         if len(value) == 15 and "_" in value:
             date_part, time_part = value.split("_", maxsplit=1)
             if len(date_part) == 8 and len(time_part) == 6:
                 return (
-                    f"{date_part[0:4]}-{date_part[4:6]}-{date_part[6:8]} "
+                    f"{prefix}{date_part[0:4]}-{date_part[4:6]}-{date_part[6:8]} "
                     f"{time_part[0:2]}:{time_part[2:4]}:{time_part[4:6]}"
                 )
-        return value
+        return f"{prefix}{value}"
 
     @staticmethod
     def _format_short_session_timestamp(value: str | None) -> str:
         if not value:
             return "N/A"
+        if value.startswith("video_"):
+            value = value[len("video_") :]
         if len(value) == 15 and "_" in value:
             date_part, time_part = value.split("_", maxsplit=1)
             if len(date_part) == 8 and len(time_part) == 6:
