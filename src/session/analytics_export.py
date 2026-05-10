@@ -121,6 +121,12 @@ def _build_html(snapshot: AnalyticsSnapshot, calibration_profile=None) -> str:
       font-size: 30px;
       font-weight: 800;
       letter-spacing: -0.03em;
+      line-height: 1.15;
+      overflow-wrap: anywhere;
+    }}
+    .metric-value.long {{
+      font-size: 24px;
+      letter-spacing: -0.02em;
     }}
     .section {{
       margin-top: 18px;
@@ -227,10 +233,14 @@ def _build_html(snapshot: AnalyticsSnapshot, calibration_profile=None) -> str:
 
 
 def _metric_card(label: str, value, css_class: str = "") -> str:
+    value_text = str(value)
+    value_classes = " ".join(
+        part for part in (css_class, "long" if len(value_text) > 18 else "") if part
+    )
     return (
         '<article class="card">'
         f'<div class="metric-label">{escape(str(label))}</div>'
-        f'<div class="metric-value {escape(css_class)}">{escape(str(value))}</div>'
+        f'<div class="metric-value {escape(value_classes)}">{escape(value_text)}</div>'
         "</article>"
     )
 
@@ -315,11 +325,19 @@ def _format_issue(value: str | None) -> str:
 def _format_timestamp(value: str | None) -> str:
     if not value:
         return "N/A"
+    prefix = ""
+    suffix = ""
+    if value.startswith("video_"):
+        prefix = "Video "
+        value = value[len("video_") :]
+        if len(value) > 15 and value[15] == "_":
+            suffix = f" #{value[16:]}"
+            value = value[:15]
     if len(value) == 15 and "_" in value:
         date_part, time_part = value.split("_", maxsplit=1)
         if len(date_part) == 8 and len(time_part) == 6:
             return (
-                f"{date_part[0:4]}-{date_part[4:6]}-{date_part[6:8]} "
-                f"{time_part[0:2]}:{time_part[2:4]}:{time_part[4:6]}"
+                f"{prefix}{date_part[0:4]}-{date_part[4:6]}-{date_part[6:8]} "
+                f"{time_part[0:2]}:{time_part[2:4]}:{time_part[4:6]}{suffix}"
             )
-    return value
+    return f"{prefix}{value}{suffix}"

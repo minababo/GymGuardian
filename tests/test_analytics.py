@@ -79,3 +79,15 @@ def test_session_browser_marks_incomplete_sessions_without_crashing(tmp_path) ->
     assert sessions[0].folder_name.endswith("(incomplete)")
     assert sessions[1].valid_session is True
     assert sessions[1].folder_name == "20260502_120000"
+
+
+def test_session_browser_supports_video_analysis_folders(tmp_path) -> None:
+    _write_summary(tmp_path, "20260503_120000", {"rep_count": 4, "bad_rep_count": 0})
+    _write_summary(tmp_path, "video_20260504_120000", {"rep_count": 5, "bad_rep_count": 1})
+    analysed_video = tmp_path / "video_20260504_120000" / "analysed_video.mp4"
+    analysed_video.write_bytes(b"placeholder")
+
+    sessions = list_recent_sessions(tmp_path, limit=None)
+
+    assert sessions[0].folder_name == "video_20260504_120000"
+    assert sessions[0].video_path == analysed_video
