@@ -338,6 +338,10 @@ class SquatRepCounter:
         self._min_ankle_angle: Optional[float] = None
         self._max_torso_angle: Optional[float] = None
 
+    @property
+    def in_rep(self) -> bool:
+        return self._in_rep
+
     def update(self, squat_state: SquatState, timestamp: float) -> RepCounterUpdate:
         if squat_state.label == "no_pose" or not squat_state.pose_visible:
             return self._handle_missing_pose()

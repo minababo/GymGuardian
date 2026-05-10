@@ -33,15 +33,18 @@ class PoseDetector:
         self._landmarker = vision.PoseLandmarker.create_from_options(options)
         self._timestamp_ms = 0  # must increase for VIDEO mode
 
-    def process(self, frame_bgr):
+    def process(self, frame_bgr, timestamp_ms: int | None = None):
         """Run pose detection on a BGR frame and return a PoseLandmarkerResult."""
         frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
 
         # ✅ In this MediaPipe build, Image is at top-level mediapipe.Image
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_rgb)
 
-        # VIDEO mode requires monotonically increasing timestamps
-        self._timestamp_ms += 33  # ~30fps
+        # VIDEO mode requires monotonically increasing timestamps.
+        if timestamp_ms is None:
+            self._timestamp_ms += 33  # ~30fps fallback for live webcam frames.
+        else:
+            self._timestamp_ms = max(int(timestamp_ms), self._timestamp_ms + 1)
         return self._landmarker.detect_for_video(mp_image, self._timestamp_ms)
 
     def close(self) -> None:

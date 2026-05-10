@@ -15,7 +15,7 @@ import numpy as np
 
 from analysis.squat import SquatRepCounter, SquatStateAnalyzer
 from core.config import CALIBRATION_CONFIG, SquatConfig
-from core.paths import SESSIONS_DIR
+from core.paths import INPUT_VIDEOS_DIR, SESSIONS_DIR
 from core.user_profile import (
     build_calibration_profile,
     load_app_settings,
@@ -36,8 +36,10 @@ from session.browser import (
     open_session_video,
 )
 from session.analytics_export import export_analytics_report
+from session.feedback import current_feedback, rep_feedback
 from session.recorder import SessionRecorder
 from session.summary import SessionSummary
+from session.video_analysis import analyze_video_file, find_latest_input_video
 from ui.overlay import OverlayRenderer
 
 
@@ -51,9 +53,11 @@ STATE_BROWSE = "browse"
 STATE_ANALYTICS = "analytics"
 STATE_CALIBRATION = "calibration"
 STATE_SETTINGS = "settings"
+STATE_VIDEO_ANALYSIS = "video_analysis"
 UP_KEY = 2490368
 DOWN_KEY = 2621440
 FEEDBACK_HOLD_SECONDS = 2.0
+NOTICE_HOLD_SECONDS = 10.0
 SW_MAXIMIZE = 3
 STATIC_SCREEN_WAIT_MS = 80
 CAMERA_INDICES = (0, 1, 2)
@@ -65,11 +69,28 @@ FALLBACK_CAMERA_LABELS = {
 
 _WINDOW_MAXIMIZED = False
 _LAST_CAMERA_WARNING: str | None = None
+_LAST_CAMERA_WARNING_AT = 0.0
 
 
 def _sync_app_background(overlay: OverlayRenderer) -> None:
     global APP_BG
     APP_BG = overlay.BG
+
+
+def _set_dashboard_notice(message: str | None) -> None:
+    global _LAST_CAMERA_WARNING, _LAST_CAMERA_WARNING_AT
+    _LAST_CAMERA_WARNING = message
+    _LAST_CAMERA_WARNING_AT = time.monotonic() if message else 0.0
+
+
+def _get_dashboard_notice() -> str | None:
+    global _LAST_CAMERA_WARNING, _LAST_CAMERA_WARNING_AT
+    if not _LAST_CAMERA_WARNING:
+        return None
+    if time.monotonic() - _LAST_CAMERA_WARNING_AT > NOTICE_HOLD_SECONDS:
+        _set_dashboard_notice(None)
+        return None
+    return _LAST_CAMERA_WARNING
 
 
 def _get_window_client_size(window_name: str) -> tuple[int, int] | None:
@@ -212,30 +233,21 @@ def _current_feedback(
     feedback_until: float,
     timestamp: float,
     squat_config: SquatConfig,
+    is_in_rep: bool = False,
 ) -> tuple[str | None, str]:
-    if feedback_message and timestamp <= feedback_until:
-        return feedback_message, feedback_level
-
-    angle = squat_state.knee_angle
-    if (
-        angle is not None
-        and squat_config.shallow_knee_angle < angle <= squat_config.rep_bottom_knee_angle
-    ):
-        return "Go deeper", "warning"
-
-    return None, "info"
+    return current_feedback(
+        squat_state,
+        feedback_message,
+        feedback_level,
+        feedback_until,
+        timestamp,
+        squat_config,
+        is_in_rep=is_in_rep,
+    )
 
 
 def _rep_feedback(issues: tuple[str, ...], is_bad: bool) -> tuple[str, str]:
-    if is_bad and "too_shallow" in issues:
-        return "Bad rep: lower hips and bend knees more", "bad"
-    if "torso_lean" in issues and "ankle_control" in issues:
-        return "Rep logged: feet flat, knees over toes, chest up", "warning"
-    if "torso_lean" in issues:
-        return "Rep logged: brace core and keep chest up", "warning"
-    if "ankle_control" in issues:
-        return "Rep logged: keep feet flat; knees track over toes", "warning"
-    return "Rep accepted", "ok"
+    return rep_feedback(issues, is_bad)
 
 
 def _filter_sessions_for_settings(sessions, settings):
@@ -348,8 +360,6 @@ def _camera_has_frame(cap: cv2.VideoCapture) -> bool:
 
 def _open_camera(camera_index: int, context: str) -> tuple[cv2.VideoCapture | None, int]:
     """Open the selected camera index, falling back to index 0 when needed."""
-    global _LAST_CAMERA_WARNING
-
     requested_index = camera_index if 0 <= camera_index <= 2 else 0
     indices = [requested_index]
     if requested_index != 0:
@@ -370,20 +380,21 @@ def _open_camera(camera_index: int, context: str) -> tuple[cv2.VideoCapture | No
                     f"{context}; using camera 0 instead."
                 )
                 print(warning)
-                _LAST_CAMERA_WARNING = warning
+                _set_dashboard_notice(warning)
                 set_camera_index(load_app_settings(), 0)
             else:
-                _LAST_CAMERA_WARNING = None
+                _set_dashboard_notice(None)
             return cap, index
 
         cap.release()
         print(f"Warning: camera {index} could not be opened for {context}.")
 
-    _LAST_CAMERA_WARNING = (
+    warning = (
         f"Warning: camera {requested_index} could not be opened for {context}, "
         "and fallback camera 0 also failed."
     )
-    print(_LAST_CAMERA_WARNING)
+    _set_dashboard_notice(warning)
+    print(warning)
     return None, requested_index
 
 
@@ -486,6 +497,7 @@ def run_session(overlay: OverlayRenderer) -> bool:
                 feedback_until,
                 timestamp,
                 squat_config,
+                is_in_rep=rep_counter.in_rep,
             )
             overlay.draw(
                 frame,
@@ -628,6 +640,33 @@ def run_analytics(overlay: OverlayRenderer) -> bool:
                 os.startfile(str(report_path))
             except (AttributeError, OSError) as exc:
                 print(f"Warning: could not open analytics report: {exc}")
+
+
+def run_video_analysis(overlay: OverlayRenderer) -> bool:
+    """Analyse the newest local video in input_videos using the live pipeline."""
+    video_path = find_latest_input_video(INPUT_VIDEOS_DIR)
+    if video_path is None:
+        notice = (
+            "No videos found in input_videos. Add an MP4/AVI/MOV/MKV file, then press V."
+        )
+        _set_dashboard_notice(notice)
+        print(notice)
+        return _window_is_open(WINDOW_NAME)
+
+    print(f"Analysing local video: {video_path}")
+    result = analyze_video_file(
+        video_path,
+        overlay,
+        show_frame=lambda frame: _show_frame(WINDOW_NAME, frame),
+        poll_key=_wait_for_key_or_close,
+    )
+    _set_dashboard_notice(result.message)
+    print(result.message)
+    if result.summary_path:
+        print(f"Video analysis summary saved: {result.summary_path}")
+    if result.analysed_video_path:
+        print(f"Analysed video saved: {result.analysed_video_path}")
+    return result.keep_running and _window_is_open(WINDOW_NAME)
 
 
 def run_calibration(overlay: OverlayRenderer) -> bool:
@@ -783,8 +822,6 @@ def run_settings(overlay: OverlayRenderer) -> bool:
 
 
 def main() -> None:
-    global _LAST_CAMERA_WARNING
-
     settings = load_app_settings()
     overlay = OverlayRenderer(settings.theme)
     _sync_app_background(overlay)
@@ -803,7 +840,7 @@ def main() -> None:
                     frame,
                     load_calibration_profile(),
                     settings,
-                    _LAST_CAMERA_WARNING,
+                    _get_dashboard_notice(),
                     _camera_options(),
                 )
                 _show_frame(WINDOW_NAME, frame)
@@ -815,6 +852,8 @@ def main() -> None:
                     continue
                 if key in (ord("s"), ord("S")):
                     state = STATE_SESSION
+                elif key in (ord("v"), ord("V")):
+                    state = STATE_VIDEO_ANALYSIS
                 elif key in (ord("c"), ord("C")):
                     state = STATE_CALIBRATION
                 elif key in (ord("b"), ord("B")):
@@ -826,11 +865,15 @@ def main() -> None:
                 elif key in (ord("k"), ord("K")):
                     _windows_camera_names.cache_clear()
                     settings = switch_camera_index(settings)
-                    _LAST_CAMERA_WARNING = None
+                    _set_dashboard_notice(None)
                 elif key == 27:
                     break
             elif state == STATE_SESSION:
                 if not run_session(overlay):
+                    break
+                state = STATE_DASHBOARD
+            elif state == STATE_VIDEO_ANALYSIS:
+                if not run_video_analysis(overlay):
                     break
                 state = STATE_DASHBOARD
             elif state == STATE_BROWSE:

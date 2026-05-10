@@ -93,14 +93,14 @@ def list_recent_sessions(
         return []
 
     folders = [path for path in sessions_dir.iterdir() if path.is_dir()]
-    folders.sort(key=lambda path: path.name, reverse=True)
+    folders.sort(key=_session_sort_key, reverse=True)
     if limit is not None:
         folders = folders[:limit]
 
     items: list[SessionBrowserItem] = []
     for folder in folders:
         summary_path = folder / "summary.json"
-        video_path = folder / "session.mp4"
+        video_path = _session_video_path(folder)
         data = _load_summary_data(summary_path)
         rep_count = _safe_int(data.get("rep_count")) if data else None
         bad_rep_count = _safe_int(data.get("bad_rep_count")) if data else None
@@ -218,6 +218,27 @@ def open_session_folder(session: SessionBrowserItem) -> None:
         return
 
     os.startfile(str(session.folder_path))
+
+
+def _session_video_path(folder: Path) -> Path:
+    live_video_path = folder / "session.mp4"
+    if live_video_path.exists():
+        return live_video_path
+    analysed_video_path = folder / "analysed_video.mp4"
+    if analysed_video_path.exists():
+        return analysed_video_path
+    return live_video_path
+
+
+def _session_sort_key(path: Path) -> str:
+    name = path.name
+    if name.startswith("video_"):
+        candidate = name.removeprefix("video_")
+        if len(candidate) >= 15:
+            return candidate[:15]
+    if len(name) >= 15:
+        return name[:15]
+    return name
 
 
 def _load_summary_data(summary_path: Path) -> Optional[dict]:

@@ -31,3 +31,4 @@ assets/models/*.task
 sessions/
 user_data/
 exports/
+input_videos/
