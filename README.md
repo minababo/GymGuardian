@@ -27,11 +27,16 @@ Multi-exercise support is considered future work.
   - `rep_metrics.csv`
   - `session_report.txt`
   - `session.mp4`
+- local video analysis for MP4 files placed in `input_videos/`
 - analytics dashboard for:
   - latest meaningful session metrics
   - progress vs previous meaningful session
   - recommendation-style session insights
+  - HTML analytics export
+- manual-label evaluation export for report evidence
 - session browser for opening saved videos and folders
+- camera source switching for built-in, external USB, or virtual phone cameras
+- local calibration and light/dark theme settings
 
 ## Technology Stack
 
@@ -83,10 +88,34 @@ python src/app.py
 Controls:
 
 - `S`: start squat session
+- `V`: analyse newest local video in `input_videos/`
+- `C`: calibrate squat depth
 - `B`: browse saved sessions
 - `A`: open analytics dashboard
+- `G`: open settings
+- `K`: switch camera source from dashboard/settings
 - `Esc`: go back or exit
 - `D`: toggle debug overlay during a live session
+
+### Build a Windows executable
+
+The project can be packaged as a local Windows desktop executable with the
+GymGuardian icon applied to the title bar and taskbar.
+
+```powershell
+.\scripts\build_exe.ps1
+```
+
+The generated application is written to:
+
+```text
+dist\GymGuardian\GymGuardian.exe
+```
+
+The build script installs PyInstaller into the active Python environment if it
+is missing. Runtime outputs such as `sessions/`, `exports/`, `user_data/`, and
+`input_videos/` remain local to the executable folder when running the packaged
+app.
 
 ## Camera Assumptions
 
@@ -99,8 +128,10 @@ The current prototype assumes:
 
 ## Documentation
 
-- `docs/final-project-artifacts.md`: architecture, workflow, methodology, and project considerations
 - `docs/test-plan.md`: evaluation matrix, evidence checklist, and report-ready results table
+- `docs/evaluation/`: manual-label evaluation input and instructions
+
+Generated session folders, input videos and exports are intentionally ignored by Git.
 
 ## Project Status
 
