@@ -7,6 +7,7 @@ from ctypes import wintypes
 from datetime import datetime
 from functools import lru_cache
 import os
+import shutil
 import subprocess
 import time
 
@@ -15,7 +16,7 @@ import numpy as np
 
 from analysis.squat import SquatRepCounter, SquatStateAnalyzer
 from core.config import CALIBRATION_CONFIG, SquatConfig
-from core.paths import INPUT_VIDEOS_DIR, SESSIONS_DIR
+from core.paths import ASSETS_DIR, INPUT_VIDEOS_DIR, SESSIONS_DIR
 from core.user_profile import (
     build_calibration_profile,
     load_app_settings,
@@ -44,6 +45,7 @@ from ui.overlay import OverlayRenderer
 
 
 WINDOW_NAME = "GymGuardian"
+WINDOW_APP_ID = "GymGuardian.SquatCoach.Prototype.Final"
 FRAME_WIDTH = 1280
 FRAME_HEIGHT = 720
 APP_BG = (229, 237, 233)
@@ -70,6 +72,99 @@ FALLBACK_CAMERA_LABELS = {
 _WINDOW_MAXIMIZED = False
 _LAST_CAMERA_WARNING: str | None = None
 _LAST_CAMERA_WARNING_AT = 0.0
+
+
+def _set_windows_app_id() -> None:
+    """Give Windows a stable taskbar identity when running from Python or an exe."""
+    if os.name != "nt":
+        return
+
+    try:
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(WINDOW_APP_ID)
+    except Exception:
+        return
+
+
+def _set_window_icon(window_name: str) -> None:
+    """Apply the GymGuardian icon to the native OpenCV window on Windows."""
+    if os.name != "nt":
+        return
+
+    icon_path = ASSETS_DIR / "gymguardian.ico"
+    if not icon_path.exists():
+        return
+
+    try:
+        ctypes.windll.user32.FindWindowW.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR]
+        ctypes.windll.user32.FindWindowW.restype = wintypes.HWND
+        hwnd = ctypes.windll.user32.FindWindowW(None, window_name)
+        if not hwnd:
+            return
+
+        ctypes.windll.user32.LoadImageW.argtypes = [
+            wintypes.HINSTANCE,
+            wintypes.LPCWSTR,
+            wintypes.UINT,
+            ctypes.c_int,
+            ctypes.c_int,
+            wintypes.UINT,
+        ]
+        ctypes.windll.user32.LoadImageW.restype = wintypes.HANDLE
+        ctypes.windll.user32.SendMessageW.argtypes = [
+            wintypes.HWND,
+            wintypes.UINT,
+            wintypes.WPARAM,
+            wintypes.LPARAM,
+        ]
+        ctypes.windll.user32.SendMessageW.restype = wintypes.LPARAM
+
+        image_icon = 1
+        lr_load_from_file = 0x00000010
+        wm_set_icon = 0x0080
+        icon_small = 0
+        icon_big = 1
+        icon_small2 = 2
+        gclp_hicon = -14
+        gclp_hiconsm = -34
+
+        def load_icon(size: int):
+            return ctypes.windll.user32.LoadImageW(
+                None,
+                str(icon_path),
+                image_icon,
+                size,
+                size,
+                lr_load_from_file,
+            )
+
+        hicon_big = load_icon(256) or load_icon(64) or load_icon(32)
+        hicon_small = load_icon(32) or load_icon(16) or hicon_big
+
+        if hicon_small:
+            ctypes.windll.user32.SendMessageW(hwnd, wm_set_icon, icon_small, hicon_small)
+            ctypes.windll.user32.SendMessageW(hwnd, wm_set_icon, icon_small2, hicon_small)
+        if hicon_big:
+            ctypes.windll.user32.SendMessageW(hwnd, wm_set_icon, icon_big, hicon_big)
+
+        # Some OpenCV/Win32 windows use the class icon for the taskbar image.
+        if hasattr(ctypes.windll.user32, "SetClassLongPtrW"):
+            ctypes.windll.user32.SetClassLongPtrW.argtypes = [
+                wintypes.HWND,
+                ctypes.c_int,
+                ctypes.c_void_p,
+            ]
+            ctypes.windll.user32.SetClassLongPtrW.restype = ctypes.c_void_p
+            if hicon_big:
+                ctypes.windll.user32.SetClassLongPtrW(hwnd, gclp_hicon, hicon_big)
+            if hicon_small:
+                ctypes.windll.user32.SetClassLongPtrW(hwnd, gclp_hiconsm, hicon_small)
+        else:
+            if hicon_big:
+                ctypes.windll.user32.SetClassLongW(hwnd, gclp_hicon, hicon_big)
+            if hicon_small:
+                ctypes.windll.user32.SetClassLongW(hwnd, gclp_hiconsm, hicon_small)
+    except Exception:
+        return
 
 
 def _sync_app_background(overlay: OverlayRenderer) -> None:
@@ -220,6 +315,7 @@ def _initialize_window() -> None:
     for _ in range(3):
         cv2.waitKey(1)
 
+    _set_window_icon(WINDOW_NAME)
     _maximize_window(WINDOW_NAME)
     for _ in range(5):
         cv2.waitKey(1)
@@ -426,6 +522,8 @@ def run_session(overlay: OverlayRenderer) -> bool:
     feedback_level = "info"
     feedback_until = 0.0
     keep_running = True
+    raw_writer = None
+    raw_video_path = None
 
     try:
         while True:
@@ -442,6 +540,18 @@ def run_session(overlay: OverlayRenderer) -> bool:
                 capture_fps = cap.get(cv2.CAP_PROP_FPS)
                 recorder.start(frame_size=frame_size, fps=capture_fps)
                 recorder_started = True
+                raw_fps = capture_fps if capture_fps and capture_fps > 1 else 30.0
+                raw_video_path = session_dir / "session_raw.mp4"
+                session_dir.mkdir(parents=True, exist_ok=True)
+                raw_writer = cv2.VideoWriter(
+                    str(raw_video_path),
+                    cv2.VideoWriter_fourcc(*"mp4v"),
+                    raw_fps,
+                    frame_size,
+                )
+                if not raw_writer.isOpened():
+                    raw_writer = None
+                    raw_video_path = None
 
             timestamp = time.time()
             if previous_frame_time > 0:
@@ -474,6 +584,7 @@ def run_session(overlay: OverlayRenderer) -> bool:
                 summary.record_completed_rep(
                     rep_index=rep_counter.rep_count,
                     timestamp=elapsed,
+                    start_timestamp=rep_update.rep_start_time or elapsed,
                     is_bad=rep_update.is_bad,
                     issues=rep_update.issues,
                     min_knee_angle=rep_update.min_knee_angle,
@@ -499,6 +610,8 @@ def run_session(overlay: OverlayRenderer) -> bool:
                 squat_config,
                 is_in_rep=rep_counter.in_rep,
             )
+            if raw_writer is not None:
+                raw_writer.write(frame)
             overlay.draw(
                 frame,
                 results,
@@ -545,12 +658,20 @@ def run_session(overlay: OverlayRenderer) -> bool:
     finally:
         summary.rep_count = rep_counter.rep_count
         summary.bad_rep_count = rep_counter.bad_rep_count
-        saved_path = summary.save(session_dir)
         recorder.stop()
+        if raw_writer is not None:
+            raw_writer.release()
 
         detector.close()
         cap.release()
 
+        if summary.rep_count <= 0:
+            if session_dir.exists():
+                shutil.rmtree(session_dir, ignore_errors=True)
+            print("Empty session discarded: no completed reps recorded.")
+            return keep_running
+
+        saved_path = summary.save(session_dir)
         print(f"Session summary saved: {saved_path}")
         rep_metrics_path = session_dir / "rep_metrics.csv"
         if rep_metrics_path.exists():
@@ -560,6 +681,14 @@ def run_session(overlay: OverlayRenderer) -> bool:
             print(f"Session report exported: {session_report_path}")
         if recorder_started and recorder.output_path.exists():
             print(f"Session video path: {recorder.output_path}")
+            from session.bad_rep_export import run_bad_rep_export
+            run_bad_rep_export(
+                session_dir,
+                recorder.output_path,
+                summary,
+                recorder._fps,
+                source_video_path=raw_video_path,
+            )
 
     return keep_running
 
@@ -822,6 +951,7 @@ def run_settings(overlay: OverlayRenderer) -> bool:
 
 
 def main() -> None:
+    _set_windows_app_id()
     settings = load_app_settings()
     overlay = OverlayRenderer(settings.theme)
     _sync_app_background(overlay)

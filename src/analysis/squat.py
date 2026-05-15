@@ -318,6 +318,7 @@ class RepCounterUpdate:
     min_knee_angle: Optional[float] = None
     min_ankle_angle: Optional[float] = None
     max_torso_angle: Optional[float] = None
+    rep_start_time: Optional[float] = None
 
 
 class SquatRepCounter:
@@ -435,6 +436,7 @@ class SquatRepCounter:
         min_knee_angle = self._min_knee_angle
         min_ankle_angle = self._min_ankle_angle
         max_torso_angle = self._max_torso_angle
+        rep_start_time = self._rep_start_time
 
         issues: list[str] = []
         if min_knee_angle is None or min_knee_angle > self._config.shallow_knee_angle:
@@ -468,6 +470,7 @@ class SquatRepCounter:
             min_knee_angle=min_knee_angle,
             min_ankle_angle=min_ankle_angle,
             max_torso_angle=max_torso_angle,
+            rep_start_time=rep_start_time,
         )
 
     def _clear_cycle_metrics(self) -> None:

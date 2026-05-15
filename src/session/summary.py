@@ -28,6 +28,7 @@ class CompletedRep:
     min_knee_angle: Optional[float] = None
     min_ankle_angle: Optional[float] = None
     max_torso_angle: Optional[float] = None
+    start_timestamp: float = 0.0
 
 
 @dataclass
@@ -90,6 +91,7 @@ class SessionSummary:
         min_knee_angle: Optional[float],
         min_ankle_angle: Optional[float],
         max_torso_angle: Optional[float],
+        start_timestamp: float = 0.0,
     ) -> None:
         self.completed_reps.append(
             CompletedRep(
@@ -100,6 +102,7 @@ class SessionSummary:
                 min_knee_angle=self._round_optional(min_knee_angle),
                 min_ankle_angle=self._round_optional(min_ankle_angle),
                 max_torso_angle=self._round_optional(max_torso_angle),
+                start_timestamp=round(start_timestamp, 2),
             )
         )
 
@@ -125,6 +128,7 @@ class SessionSummary:
                 {
                     "rep_index": rep.rep_index,
                     "timestamp": rep.timestamp,
+                    "start_timestamp": rep.start_timestamp,
                     "is_bad": rep.is_bad,
                     "issues": list(rep.issues),
                     "min_knee_angle": rep.min_knee_angle,
@@ -132,6 +136,16 @@ class SessionSummary:
                     "max_torso_angle": rep.max_torso_angle,
                 }
                 for rep in self.completed_reps
+            ],
+            "bad_rep_timestamps": [
+                {
+                    "rep_number": rep.rep_index,
+                    "issue": rep.issues[0] if rep.issues else "unknown",
+                    "start_sec": rep.start_timestamp,
+                    "end_sec": rep.timestamp,
+                }
+                for rep in self.completed_reps
+                if rep.is_bad or rep.issues
             ],
             "events": [
                 {
@@ -161,6 +175,7 @@ class SessionSummary:
             writer.writerow(
                 [
                     "rep_index",
+                    "start_timestamp_seconds",
                     "timestamp_seconds",
                     "is_bad",
                     "issues",
@@ -173,6 +188,7 @@ class SessionSummary:
                 writer.writerow(
                     [
                         rep.rep_index,
+                        f"{rep.start_timestamp:.2f}",
                         f"{rep.timestamp:.2f}",
                         int(rep.is_bad),
                         ", ".join(rep.issues),
