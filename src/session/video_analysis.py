@@ -159,6 +159,7 @@ def analyze_video_file(
                 summary.record_completed_rep(
                     rep_index=rep_counter.rep_count,
                     timestamp=frame_time,
+                    start_timestamp=rep_update.rep_start_time or frame_time,
                     is_bad=rep_update.is_bad,
                     issues=rep_update.issues,
                     min_knee_angle=rep_update.min_knee_angle,
@@ -213,6 +214,14 @@ def analyze_video_file(
         summary_path = summary.save(session_dir)
         if writer_enabled:
             writer.release()
+        from session.bad_rep_export import run_bad_rep_export
+        run_bad_rep_export(
+            session_dir,
+            analysed_video_path if writer_enabled else None,
+            summary,
+            fps,
+            source_video_path=video_path,
+        )
         detector.close()
         cap.release()
 

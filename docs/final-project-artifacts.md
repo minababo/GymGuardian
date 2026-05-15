@@ -33,6 +33,8 @@ flowchart LR
     F --> I[session_report.txt]
     B --> J[Session Recorder]
     J --> K[session.mp4]
+    B --> J2[Raw Recorder]
+    J2 --> K2[session_raw.mp4]
     D --> L[Live Overlay]
     E --> L
     G --> M[Analytics Loader]
@@ -41,6 +43,10 @@ flowchart LR
     M --> N[Analytics Dashboard]
     G --> O[Session Browser]
     K --> O
+    F --> P[Bad Rep Export]
+    K2 --> P
+    P --> Q[bad_reps/ clips]
+    P --> R[FFmpeg Chapter Markers]
 ```
 
 ## 3. Application Workflow
@@ -49,16 +55,23 @@ flowchart LR
 flowchart TD
     A[Launch App] --> B[Dashboard]
     B -->|S| C[Live Squat Session]
+    B -->|V| VA[Video Analysis]
     B -->|A| D[Analytics Dashboard]
     B -->|B| E[Session Browser]
+    B -->|C| CAL[Calibration]
+    B -->|G| SET[Settings]
     C --> F[Pose Detection + Joint Angles]
+    VA --> F
     F --> G[State Classification]
     G --> H[Rep Counting]
     H --> I[Form Checks]
     I --> J[Save Session Artifacts]
-    J --> B
+    J --> JB[Bad Rep Export]
+    JB --> B
     D -->|Esc| B
     E -->|Esc| B
+    CAL -->|Esc| B
+    SET -->|Esc| B
 ```
 
 ## 4. Squat State Transition Model
@@ -99,6 +112,8 @@ flowchart TB
         SUMMARY[session/summary.py]
         BROWSER[session/browser.py]
         INSIGHTS[session/insights.py]
+        BADEXP[session/bad_rep_export.py]
+        VIDANAL[session/video_analysis.py]
     end
 
     APP --> DETECTOR
@@ -107,9 +122,16 @@ flowchart TB
     APP --> RECORDER
     APP --> SUMMARY
     APP --> BROWSER
+    APP --> BADEXP
+    APP --> VIDANAL
     SQUAT --> CONFIG
     SUMMARY --> INSIGHTS
     BROWSER --> INSIGHTS
+    SUMMARY --> BADEXP
+    VIDANAL --> DETECTOR
+    VIDANAL --> SQUAT
+    VIDANAL --> SUMMARY
+    VIDANAL --> BADEXP
 ```
 
 ## 6. Methodology Notes
@@ -207,4 +229,3 @@ Potential next steps:
 - add calibration routines for user height and camera distance
 - add richer per-rep scoring instead of issue-only tagging
 - investigate adaptive thresholds or hybrid rule/ML classification
-- build automated evaluation scripts around saved session evidence

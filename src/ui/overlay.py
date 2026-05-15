@@ -283,22 +283,37 @@ class OverlayRenderer:
         frame_h, frame_w = frame_bgr.shape[:2]
         margin = 34
 
+        browser_hint = (
+            "Up/Down select  |  P play video  |  O open folder  |  H show invalid tests  |  Esc dashboard"
+            if hide_incomplete_sessions
+            else "Up/Down select  |  P play video  |  O open folder  |  H hide invalid tests  |  Esc dashboard"
+        )
         self._draw_screen_header(
             frame_bgr,
             margin,
             "Session Browser",
-            "Up/Down select  |  P play video  |  O open folder  |  H hide/show incomplete  |  Esc dashboard",
+            browser_hint,
         )
 
         list_x = margin
         list_y = 126
         list_w = frame_w - (margin * 2)
         list_h = frame_h - list_y - margin
-        status_x = list_x + list_w - 196
-        status_w = 150
-        bad_x = list_x + list_w - 318
-        reps_x = list_x + list_w - 440
         metric_w = 70
+        if hide_incomplete_sessions:
+            fps_w = 90
+            knee_w = 120
+            fps_x = list_x + list_w - 150
+            knee_x = list_x + list_w - 300
+            bad_x = list_x + list_w - 420
+            reps_x = list_x + list_w - 540
+            status_x = status_w = None
+        else:
+            status_x = list_x + list_w - 196
+            status_w = 150
+            bad_x = list_x + list_w - 318
+            reps_x = list_x + list_w - 440
+            knee_x = knee_w = fps_x = fps_w = None
         timestamp_w = max(260, reps_x - list_x - 56)
 
         self._draw_panel(
@@ -319,12 +334,12 @@ class OverlayRenderer:
                 list_y,
                 list_w,
                 (
-                    "No complete sessions shown"
+                    "No valid sessions shown"
                     if hide_incomplete_sessions
                     else "No saved sessions found"
                 ),
                 (
-                    "Press H to show incomplete sessions again."
+                    "Press H to show invalid tests too."
                     if hide_incomplete_sessions
                     else "Complete a workout session to populate this browser."
                 ),
@@ -339,9 +354,38 @@ class OverlayRenderer:
         self._put_text_centered(
             frame_bgr, "Bad", bad_x, header_y - 22, metric_w, 24, 0.52, self.MUTED
         )
-        self._put_text_centered(
-            frame_bgr, "Status", status_x, header_y - 22, status_w, 24, 0.52, self.MUTED
-        )
+        if hide_incomplete_sessions:
+            self._put_text_centered(
+                frame_bgr,
+                "Avg Knee",
+                knee_x,
+                header_y - 22,
+                knee_w,
+                24,
+                0.52,
+                self.MUTED,
+            )
+            self._put_text_centered(
+                frame_bgr,
+                "Avg FPS",
+                fps_x,
+                header_y - 22,
+                fps_w,
+                24,
+                0.52,
+                self.MUTED,
+            )
+        else:
+            self._put_text_centered(
+                frame_bgr,
+                "Status",
+                status_x,
+                header_y - 22,
+                status_w,
+                24,
+                0.52,
+                self.MUTED,
+            )
         cv2.line(
             frame_bgr,
             (list_x + 22, list_y + 58),
@@ -364,16 +408,13 @@ class OverlayRenderer:
             selected = idx == selected_index
             reps = "N/A" if item.rep_count is None else str(item.rep_count)
             bad = "N/A" if item.bad_rep_count is None else str(item.bad_rep_count)
+            avg_knee = self._format_angle(getattr(item, "avg_knee_angle", None))
+            avg_fps = self._format_fps(getattr(item, "avg_fps", None))
             is_valid = bool(
                 getattr(item, "valid_session", item.rep_count not in (None, 0))
             )
             status_text = "Complete" if is_valid else "Incomplete"
-            display_name = (
-                str(item.folder_name)
-                .replace(" (incomplete)", "")
-                .replace("(incomplete)", "")
-                .strip()
-            )
+            display_name = str(item.folder_name).strip()
             selected_fill = (82, 91, 33)
             selected_border = (150, 222, 104)
             selected_text = (252, 250, 248)
@@ -473,27 +514,49 @@ class OverlayRenderer:
                 0.62,
                 self.ERROR if bad not in ("0", "N/A") else metric_color,
             )
-            self._draw_panel(
-                frame_bgr,
-                status_x,
-                row_y - 25,
-                status_w,
-                28,
-                color=status_fill,
-                border_color=status_border,
-                alpha=0.96,
-                radius=14,
-            )
-            self._put_text_centered(
-                frame_bgr,
-                status_text,
-                status_x,
-                row_y - 25,
-                status_w,
-                28,
-                0.42,
-                status_color,
-            )
+            if hide_incomplete_sessions:
+                self._put_text_centered(
+                    frame_bgr,
+                    avg_knee,
+                    knee_x,
+                    row_y - 28,
+                    knee_w,
+                    row_h,
+                    0.56,
+                    metric_color,
+                )
+                self._put_text_centered(
+                    frame_bgr,
+                    avg_fps,
+                    fps_x,
+                    row_y - 28,
+                    fps_w,
+                    row_h,
+                    0.56,
+                    metric_color,
+                )
+            else:
+                self._draw_panel(
+                    frame_bgr,
+                    status_x,
+                    row_y - 25,
+                    status_w,
+                    28,
+                    color=status_fill,
+                    border_color=status_border,
+                    alpha=0.96,
+                    radius=14,
+                )
+                self._put_text_centered(
+                    frame_bgr,
+                    status_text,
+                    status_x,
+                    row_y - 25,
+                    status_w,
+                    28,
+                    0.42,
+                    status_color,
+                )
             row_y += 50
 
     def draw_analytics(self, frame_bgr, snapshot, calibration_profile=None) -> None:
@@ -855,11 +918,16 @@ class OverlayRenderer:
         frame_h, frame_w = frame_bgr.shape[:2]
         margin = 34
 
+        browser_hint = (
+            "H show invalid tests"
+            if getattr(settings, "hide_incomplete_sessions", False)
+            else "H hide invalid tests"
+        )
         self._draw_screen_header(
             frame_bgr,
             margin,
             "Settings",
-            "T toggle theme  |  K switch camera  |  H hide/show incomplete  |  R reset calibration  |  Esc dashboard",
+            f"T toggle theme  |  K switch camera  |  {browser_hint}  |  R reset calibration  |  Esc dashboard",
         )
 
         panel_x = margin
@@ -908,10 +976,16 @@ class OverlayRenderer:
             camera_options,
             include_index=True,
         )
+        hides_invalid_tests = getattr(settings, "hide_incomplete_sessions", False)
         browser_value = (
-            "Hiding incomplete"
-            if getattr(settings, "hide_incomplete_sessions", False)
-            else "Showing all sessions"
+            "Valid sessions only"
+            if hides_invalid_tests
+            else "Valid + invalid tests"
+        )
+        browser_helper = (
+            "Press H to show invalid tests"
+            if hides_invalid_tests
+            else "Press H to hide invalid tests"
         )
         calibration_value = (
             "Calibrated"
@@ -921,7 +995,7 @@ class OverlayRenderer:
         cards = [
             ("Theme", theme_value, "Press T to switch light/dark", self.PRIMARY),
             ("Camera", camera_value, "Press K to cycle sources", self.INFO),
-            ("Session Browser", browser_value, "Press H to toggle visibility", self.TEXT),
+            ("Session Browser", browser_value, browser_helper, self.TEXT),
             (
                 "Calibration",
                 calibration_value,

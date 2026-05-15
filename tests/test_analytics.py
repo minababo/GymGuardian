@@ -76,7 +76,7 @@ def test_session_browser_marks_incomplete_sessions_without_crashing(tmp_path) ->
     sessions = list_recent_sessions(tmp_path, limit=None)
 
     assert sessions[0].valid_session is False
-    assert sessions[0].folder_name.endswith("(incomplete)")
+    assert sessions[0].folder_name == "20260503_120000"
     assert sessions[1].valid_session is True
     assert sessions[1].folder_name == "20260502_120000"
 

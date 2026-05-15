@@ -1,214 +1,221 @@
-# GymGuardian Test Plan
+﻿# GymGuardian Test Plan
 
 ## 1. Scope
 
-This document defines the manual test plan for the GymGuardian MVP desktop application. The current scope covers:
+This document defines the final testing approach for GymGuardian, a local OpenCV/MediaPipe desktop prototype for squat monitoring. Testing covers the complete implemented system rather than a newly trained model.
 
-- Dashboard navigation
-- Squat session start and end flow
-- Session summary and video persistence
-- Session browser navigation and open actions
-- Squat rep counting accuracy
-- Too-shallow form detection
-- Basic performance and robustness checks using the in-app debug overlay
+Covered areas:
+
+- Dashboard navigation and window behaviour
+- Live webcam squat analysis
+- Offline local video analysis
+- Pose/visibility handling
+- Rep counting and bad-rep classification
+- Calibration and default-threshold fallback
+- Camera source selection
+- Session recording and local evidence files
+- Bad-rep evidence export — slow-motion clips, chapter markers, `bad_rep_timestamps`
+- Session browser and analytics dashboard
+- HTML analytics export and evaluation export
+- Automated regression tests for deterministic logic
 
 ## 2. Test Objectives
 
-### Functionality
+### Functional correctness
 
-- Verify the dashboard, session loop, and session browser work as expected.
-- Verify sessions return to the dashboard instead of terminating the app.
-- Verify saved outputs are written to the correct timestamped session folder.
+- Verify that all major screens open from the dashboard and return safely.
+- Verify that live and offline analysis reuse the same squat-analysis pipeline.
+- Verify that session outputs are saved locally and can be reopened.
+- Verify that invalid quick-exit sessions do not pollute meaningful analytics.
 
-### Accuracy
+### Squat-analysis accuracy
 
-- Compare manual squat rep counts against app rep counts.
-- Confirm shallow squats are flagged as bad reps with the correct reason.
+- Compare manually labelled repetition counts against detected counts.
+- Confirm full-depth squats are counted as good repetitions.
+- Confirm shallow squats are counted as repetitions and classified as bad reps.
+- Confirm mixed good/bad sessions produce correct total and bad-rep counts.
 
-### Performance
+### Robustness and limitations
 
-- Check estimated FPS using the session debug overlay.
-- Confirm the app remains usable on a laptop webcam at 720p.
+- Check behaviour under rotation, low light, partial visibility, out-of-frame movement, and different camera sources.
+- Treat partial body visibility as a documented limitation when landmarks are insufficient.
+- Verify that the application does not crash during invalid, incomplete, or no-pose conditions.
 
-### Robustness
+### Evidence and reporting
 
-- Verify the app handles normal state transitions without crashing.
-- Verify missing or incomplete session artifacts are handled gracefully in the browser.
+- Generate `evaluation_results.csv` and `evaluation_report.html` from manual labels.
+- Capture screenshots of the final UI screens and exported reports.
+- Keep evaluation claims tied to saved sessions, manual labels, and automated test output.
 
 ## 3. Test Environment
 
-| Item                    | Value                                                                                                 |
-| ----------------------- | ----------------------------------------------------------------------------------------------------- |
-| Operating system        | Windows 10/11 local desktop environment                                                               |
-| Camera                  | Laptop webcam configured for 720p capture request                                                     |
-| Python version          | Python 3.10.11                                                                                        |
-| Main libraries          | `mediapipe==0.10.14`, `opencv-python==4.11.0.86`, `opencv-contrib-python==4.11.0.86`, `numpy==1.26.4` |
-| Other dependencies      | See pinned versions in `requirements.txt`                                                             |
-| App entry point         | `python src/app.py`                                                                                   |
-| Session output location | `sessions/<YYYYMMDD_HHMMSS>/`                                                                         |
+| Item | Final evaluation value |
+| --- | --- |
+| Operating system | Windows local desktop environment |
+| Application type | Python/OpenCV desktop application |
+| Python version | Python 3.10 environment used through project venv |
+| Pose component | MediaPipe pose estimation |
+| Primary live camera | Phone camera exposed to Windows as an external webcam |
+| Comparison camera | Built-in laptop webcam |
+| Offline input | Local MP4 files processed from `input_videos/` |
+| Main outputs | `summary.json`, `rep_metrics.csv`, `session_report.txt`, `session.mp4` or `analysed_video.mp4`, `session_raw.mp4` (live only), `bad_reps/` clip subfolder, analytics/evaluation HTML exports |
+| Evaluation label file | `docs/evaluation/manual_labels.csv` |
+| Evaluation command | `python src/session/evaluation_export.py` |
+| Automated test command | `python -m pytest` |
 
 ## 4. Evidence Collection
 
-- Screenshot of the dashboard, session overlay, browser, or debug overlay
-- Saved `summary.json` file from the relevant session folder
-- Saved `session.mp4` file from the relevant session folder
-- Short manual observation note, including count comparison where needed
+For each important manual scenario, save or reference:
 
-- `evidence/dashboard-navigation.png`
-- `evidence/session-summary-json.png`
-- `evidence/browser-open-folder.png`
-- `evidence/rep-count-run-01.txt`
+- The session folder name in `sessions/`
+- The saved video evidence: `session.mp4` or `analysed_video.mp4`
+- The detected summary: `summary.json`
+- The per-rep export: `rep_metrics.csv`
+- The manual label row in `docs/evaluation/manual_labels.csv`
+- Screenshots of relevant UI or exported HTML report screens
 
-## 5. FPS Measurement Approach
+Recommended final screenshots:
 
-1. Start a session from the dashboard.
-2. Press `D` to enable the debug overlay.
-3. Stand in frame for 5 seconds, then perform 5 to 10 squats.
-4. Observe the `FPS` line on screen for at least 10 seconds.
-5. Record the typical steady FPS value, plus any noticeable drops during movement.
-6. Capture a screenshot showing the debug overlay and note the lighting conditions and camera angle.
+- Main dashboard with camera source and calibration state
+- Live session overlay with full-body landmarks
+- Analytics dashboard with recent trends and session report
+- Session browser showing valid sessions with average knee/FPS columns
+- Settings screen showing theme, camera, browser, and calibration controls
+- Exported analytics HTML report
+- Exported evaluation HTML report
+- Terminal output from `python -m pytest`
 
-- Typical FPS at rest: `18`
-- Typical FPS during squats: `15-19`
-- Lowest observed FPS: `15`
-- Notes on lag or dropped responsiveness: `Minor FPS drops observed during movement, likely due to lighting conditions and increased pose estimation complexity. No major lag or freezing observed.`
+## 5. Manual Labelled Evaluation Dataset
 
-## 6. Test Cases
+The current manual label file contains 20 rows:
 
-| ID    | Scenario                                   | Steps                                                                                                                                                                      | Expected Result                                                                                                                      | Actual Result                                                                                                                                                                       | Evidence                                                                                                                          |
-| ----- | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| TC-01 | Dashboard launch and menu visibility       | 1. Run `python src/app.py`. 2. Observe the first screen.                                                                                                                   | Dashboard appears with instructions for `S`, `B`, and `Q/Esc`.                                                                       | Application launched successfully. Dashboard screen displayed with options for starting a session (S), browsing sessions (B), and quitting (Q/Esc).                                 | Not required (basic navigation)                                                                                                   |
-| TC-02 | Dashboard to session navigation            | 1. From dashboard, press `S`. 2. Observe webcam session screen.                                                                                                            | App enters session mode, webcam opens, pose overlay/session UI appear.                                                               | On pressing “S”, the application entered session mode. Webcam feed opened and pose overlay with rep counter was displayed.                                                          | Not required (basic navigation)                                                                                                   |
-| TC-03 | Dashboard to browser navigation            | 1. From dashboard, press `B`. 2. Observe browser screen.                                                                                                                   | App enters browser mode and lists recent sessions newest first, or shows no-sessions message.                                        | On pressing “B”, the application entered browser mode and displayed a list of saved sessions sorted by most recent.                                                                 | Not required (basic navigation)                                                                                                   |
-| TC-04 | Session end returns to dashboard           | 1. Start a session. 2. Press `Q` or `Esc`.                                                                                                                                 | Session ends, files are saved, and app returns to dashboard instead of closing completely.                                           | Pressing “Q” or “Esc” during a session ended the session, saved session data, and returned to the dashboard without closing the application.                                        | Not required (basic navigation)                                                                                                   |
-| TC-05 | Summary JSON saved to timestamped folder   | 1. Start a short session. 2. End session. 3. Open latest folder in `sessions/`. 4. Inspect `summary.json`.                                                                 | New folder named `YYYYMMDD_HHMMSS` exists and contains `summary.json` with `started_at`, `rep_count`, `bad_rep_count`, and `events`. | A new timestamped folder was created under the sessions directory. The folder contained a summary.json file with fields including started_at, rep_count, bad_rep_count, and events. | Screenshot of sessions folder and opened summary.json file.                                                                       |
-| TC-06 | Session video saved to timestamped folder  | 1. Start a short session. 2. End session. 3. Inspect latest session folder.                                                                                                | Same session folder contains `session.mp4`; video opens and plays using a media player.                                              | The same session folder contained a session.mp4 file. The video opened successfully using the default media player and showed the recorded workout.                                 | Screenshot of session folder and video playback.                                                                                  |
-| TC-07 | Browser open session folder                | 1. Enter browser. 2. Select a session with Up/Down. 3. Press `O`.                                                                                                          | Windows Explorer opens the selected session folder.                                                                                  | Pressing “O” in the browser successfully opened the selected session folder in Windows Explorer.                                                                                    | Screenshot of opened session folder in Windows Explorer.                                                                          |
-| TC-08 | Browser open session video                 | 1. Enter browser. 2. Select a session with an existing `session.mp4`. 3. Press `P`.                                                                                        | Default Windows media player opens the selected session video.                                                                       | Pressing “P” in the browser opened the selected session.mp4 file in the default media player.                                                                                       | Screenshot of video playback after selection.                                                                                     |
-| TC-09 | Rep counting accuracy against manual count | 1. Start a session. 2. Perform 10 clearly visible full-depth squats. 3. Count manually during the run. 4. End session and inspect on-screen/app count plus `summary.json`. | App rep count matches manual count or differs by no more than the agreed tolerance for MVP.                                          | Manual count = 10, App count = 10. No discrepancy observed, indicating accurate rep detection under controlled conditions.                                                          | Screenshot of session overlay showing rep count and corresponding summary.json file (e.g., sessions/20260415_155017/summary.json) |
-| TC-10 | Too-shallow detection for bad reps         | 1. Start a session. 2. Perform 5 intentionally shallow squats without reaching full depth. 3. End session and inspect `summary.json`.                                      | Bad reps increase and relevant rep events indicate shallow failure reason such as `too_shallow`.                                     | App correctly counted repetitions and classified all shallow squats as bad reps. "too_shallow" reason recorded in summary.json.                                                     | Screenshot of summary.json showing bad_rep_count = 5                                                                              |
-| TC-11 | Mixed valid and shallow squat set          | 1. Start a session. 2. Perform 5 full squats followed by 5 shallow squats. 3. End session.                                                                                 | Total rep count reflects all valid cycles; bad rep count reflects only shallow reps.                                                 | App counted all 10 repetitions correctly. Shallow squats were recognised as valid repetitions and correctly flagged as bad reps.                                                    | Browser screenshot showing session with 5 reps and 5 bad reps.                                                                    |
-| TC-12 | Debug overlay FPS measurement              | 1. Start session. 2. Press `D`. 3. Observe overlay for at least 10 seconds while standing and squatting.                                                                   | Debug overlay toggles on, shows FPS, pose detection, knee angle, and threshold values from config.                                   | Debug overlay displayed correctly. FPS observed between 16–19. Performance remained stable with minor fluctuations during movement.                                                 | Screenshot of debug overlay with FPS visible.                                                                                     |
-| TC-13 | Debug overlay toggle off                   | 1. During session, press `D` twice.                                                                                                                                        | Debug overlay appears on first press and disappears on second press without affecting rep counting.                                  | Debug overlay successfully toggled on first press (D) and turned off on second press. No impact on session performance or rep counting.                                             | Screenshot showing overlay visible and then hidden.                                                                               |
-| TC-14 | Browser ordering by recency                | 1. Create two or more sessions at different times. 2. Open browser.                                                                                                        | Most recent session folder appears first in the list.                                                                                | Sessions displayed in descending order (newest first) based on timestamped folder names.                                                                                            | Screenshot of browser showing latest session at top.                                                                              |
-| TC-15 | Robustness when no pose is detected        | 1. Start a session. 2. Step out of camera frame or block the camera.                                                                                                       | App continues running, pose status becomes unavailable/no-pose, and no crash occurs.                                                 | When user moved out of frame, system correctly transitioned to the "no_pose" state                                                                                                  | Screenshot showing "State: no_pose" during session.                                                                               |
+| Group | Cases | Purpose |
+| --- | --- | --- |
+| Live front-facing | L01-L03 | Full-depth, shallow, and mixed squat sets |
+| Live orientation | L04-L06 | Slight right, slight left, and back-facing movement where landmarks remain usable |
+| Failure/visibility | L07-L08 | No-pose/out-of-frame and partial lower-body visibility |
+| Lighting | L09 | Low-light behaviour |
+| Calibration | L10-L11 | Calibrated full-depth and calibrated shallow tests |
+| Camera source | L12 | Built-in webcam comparison |
+| Invalid quick exit | L13 | Start and exit immediately; no session folder expected |
+| Longer run | L14 | 20-rep longer session with mixed issue sequence |
+| Offline videos | V01-V06 | Own and friend/user videos processed through local video analysis |
 
-## 7. Manual Accuracy Recording Template
+`L13` is intentionally unlabelled because no session folder was created. This verifies that invalid quick-exit runs are not treated as workout data. `L07` is kept as an incomplete/no-pose case. `L08` is retained as the main partial-visibility limitation case.
 
-| Run ID | Session Folder  | Manual Count | App Count | Difference | Manual Bad Reps | App Bad Reps | Notes                             |
-| ------ | --------------- | ------------ | --------- | ---------- | --------------- | ------------ | --------------------------------- |
-| ACC-01 | 20260422_153854 | 10           | 10        | 0          | 0               | 0            | Normal squats — accurate          |
-| ACC-02 | 20260422_154001 | 5            | 5         | 0          | 5               | 5            | Shallow squats correctly detected |
-| ACC-03 | 20260422_154138 | 10           | 10        | 0          | 5               | 5            | Mixed reps handled correctly      |
+## 6. Current Quantitative Results
 
-## 8. Initial Results
+Results generated from `docs/evaluation/manual_labels.csv` using `src/session/evaluation_export.py`:
 
-### Test Run Metadata
+| Metric | Current result | Interpretation |
+| --- | --- | --- |
+| Labelled rows | 20 | Includes live, offline, calibration, camera, failure, and quick-exit rows |
+| Evaluated meaningful rows | 18 | Excludes the incomplete no-pose row and the no-session quick-exit row |
+| Manual repetitions in evaluated rows | 148 | Ground truth from manual video/session review |
+| Detected repetitions in evaluated rows | 144 | Four-rep loss caused by the partial-visibility limitation case |
+| Aggregate rep-count accuracy | 97.3% | Calculated from absolute rep-count error |
+| Controlled visible-body accuracy | 100.0% | 143 manual reps and 143 detected reps when excluding partial visibility |
+| Manual bad reps | 40 | Ground truth bad-rep count |
+| Detected bad reps | 40 | Detected bad-rep total matched manual labels |
+| Issue match | 18/18 evaluated rows | Expected issue matched detected main issue for evaluated rows |
+| Bad-rep sequence precision | 100.0% | For rows with per-rep manual bad/good sequences |
+| Bad-rep sequence recall | 100.0% | For rows with per-rep manual bad/good sequences |
+| Average FPS across evaluated rows | about 21.3 FPS | Mixed live, offline, and built-in camera conditions |
+| Built-in webcam FPS | about 10.2 FPS in current labelled comparison | Lower image quality and lower frame rate than external phone camera |
 
-- Test date: `22/04/2026`
-- Tester: `Self`
-- Lighting conditions: `Indoor, moderate lighting (some instability observed)`
-- Camera position/angle: `Front-facing laptop webcam`
-- Distance from camera: `~1.5–2 meters`
+## 7. Manual Scenario Matrix
 
-### Summary of Outcomes
+| ID | Scenario | Manual reps | Manual bad reps | Expected issue | Evidence source |
+| --- | --- | ---: | ---: | --- | --- |
+| L01 | Front-facing full-depth squats | 10 | 0 | none | Live session folder |
+| L02 | Front-facing shallow squats | 5 | 5 | too_shallow | Live session folder |
+| L03 | Mixed front-facing full and shallow squats | 10 | 5 | too_shallow | Live session folder |
+| L04 | Slight right turn | 6 | 0 | none | Live session folder |
+| L05 | Slight left turn | 6 | 0 | none | Live session folder |
+| L06 | Back/away-facing test | 6 | 0 | none | Live session folder |
+| L07 | Out of frame / no pose | 0 | 0 | none | Incomplete/no-pose evidence |
+| L08 | Partial lower-body visibility | 5 | 0 | none | Known limitation evidence |
+| L09 | Low-light test | 5 | 2 | too_shallow | Live session folder |
+| L10 | Calibrated full-depth squats | 10 | 0 | none | Live calibrated session |
+| L11 | Calibrated shallow squats | 5 | 5 | too_shallow | Live calibrated session |
+| L12 | Built-in webcam source | 5 | 0 | none | Built-in webcam comparison |
+| L13 | Start and exit immediately | N/A | N/A | N/A | No session folder expected |
+| L14 | Long session | 20 | 8 | too_shallow | Longer live session folder |
+| V01 | Own front-facing full-depth video | 10 | 0 | none | Offline analysed video |
+| V02 | Own shallow video | 5 | 5 | too_shallow | Offline analysed video |
+| V03 | Own mixed full and shallow video | 10 | 5 | too_shallow | Offline analysed video |
+| V04 | Friend/user A normal squats | 10 | 0 | none | Offline analysed video |
+| V05 | Friend/user A shallow/mixed squats | 10 | 5 | too_shallow | Offline analysed video |
+| V06 | Friend/user B normal squats | 10 | 0 | none | Offline analysed video |
 
-| Area                  | Result     | Notes                                                |
-| --------------------- | ---------- | ---------------------------------------------------- |
-| Dashboard navigation  | Pass       | All transitions work correctly                       |
-| Session lifecycle     | Pass       | Session starts and returns to dashboard              |
-| Summary persistence   | Pass       | summary.json created correctly                       |
-| Video persistence     | Pass       | session.mp4 saved and playable                       |
-| Browser actions       | Pass       | Open and playback functions work                     |
-| Rep counting accuracy | Pass       | Accurate for correct squats                          |
-| Shallow detection     | Pass       | Incorrect reps correctly classified as "too_shallow" |
-| FPS/performance       | Acceptable | ~16–19 FPS, stable during testing                    |
+## 8. Functional Test Cases
 
-### Observed Issues
+Overall manual test coverage across all modules:
 
-- `Issue 1:` `FPS varies depending on lighting conditions and environmental factors.`
-- `Issue 2:` `Pose detection accuracy slightly decreases when the user rotates away from a front-facing position.`
+| Total cases | Pass | Fail | Not run | Pass rate |
+| --- | --- | --- | --- | --- |
+| 180 | 166 | 1 | 13 | 92.2% |
 
-### Evidence Checklist
+The full case matrix is maintained in `GymGuardian_Test_Cases.xlsx`. The table below lists the core functional scenarios.
 
-- Dashboard screenshot: `Yes`
-- Session overlay screenshot: `Yes`
-- Debug overlay screenshot: `Yes`
-- Browser screenshot: `Yes`
-- Sample `summary.json`: `Yes`
-- Sample `session.mp4`: `Yes`
+| ID | Scenario | Expected Result | Status |
+| --- | --- | --- | --- |
+| FT-01 | Launch dashboard | Dashboard renders with all current actions | Pass |
+| FT-02 | Start live session | Camera opens and live overlay appears | Pass |
+| FT-03 | Analyse local video | New `video_<timestamp>` session is saved with annotated video and summary | Pass |
+| FT-04 | Open analytics dashboard | Latest meaningful session, trends, progress, and report section render | Pass |
+| FT-05 | Export analytics report | `exports/analytics_report.html` is created and opens | Pass |
+| FT-06 | Open session browser | Valid sessions are listed newest first | Pass |
+| FT-07 | Open saved video | Browser opens selected video file | Pass |
+| FT-08 | Open saved folder | Browser opens selected session folder | Pass |
+| FT-09 | Open settings | Theme, camera, browser, and calibration controls render | Pass |
+| FT-10 | Toggle theme | Light/dark theme changes without changing analysis logic | Pass |
+| FT-11 | Switch camera source | Camera index cycles and selected camera label updates | Pass |
+| FT-12 | Reset calibration | Calibration profile is removed and defaults are restored | Pass |
+| FT-13 | Window minimize/maximize | Static screens redraw cleanly after restore | Pass |
+| FT-14 | Window close button | Application exits safely from the close button | Pass |
+| FT-15 | Quick start and exit | No meaningful workout session is created or counted | Pass |
 
-## 9. Evaluation Harness
+## 9. Automated Testing
 
-GymGuardian includes a report-focused evaluation harness for comparing manually
-labelled saved sessions against detected session outputs. The label file is
-stored at `docs/evaluation/manual_labels.csv`.
+Automated tests validate deterministic project logic that can run without a webcam.
 
-### Labelling Process
-
-1. Review a saved `session.mp4` from `sessions/<timestamp>/`.
-2. Count the visible completed squat repetitions manually.
-3. Count how many repetitions should be classified as bad.
-4. Record the expected main issue, such as `too_shallow`, `ankle_control`,
-   `torso_lean`, or `none`.
-5. Optionally record a per-repetition bad sequence using `0` for good and `1`
-   for bad, for example `0,0,1,1`.
-
-### Running the Harness
-
-```powershell
-.\venv\Scripts\python.exe src\session\evaluation_export.py
-```
-
-The harness exports:
-
-- `exports/evaluation_results.csv`
-- `exports/evaluation_report.html`
-
-### Metrics Produced
-
-- Rep count error and rep count accuracy
-- Bad-rep count error and bad-rep rate difference
-- Issue match against the manually expected issue
-- Optional bad-rep precision and recall from per-rep labels
-- Average FPS from saved session summaries
-
-This evaluates the full GymGuardian system output. It should not be described
-as custom model-training accuracy because the project uses MediaPipe pose
-estimation with rule-based squat analysis.
-
-## 10. Automated Testing
-
-Automated testing was added to support supervisor feedback and strengthen the
-final evaluation evidence. These tests focus on deterministic project logic
-that can run without a webcam.
-
-### Automated Test Command
+Command:
 
 ```powershell
-.\venv\Scripts\python.exe -m pytest
+python -m pytest
 ```
 
-### Automated Coverage
+32 tests across 6 files, all passing:
 
-| Test Area | Automated Coverage |
-| --- | --- |
-| Squat logic | Joint-angle calculation, full-depth rep counting, shallow-rep classification, and no-pose reset handling |
-| Session summary | `summary.json`, `rep_metrics.csv`, `session_report.txt`, and `valid_session` output |
-| Analytics | Meaningful-session filtering, latest/previous comparison, issue totals, and FPS averaging |
-| Calibration/settings | Adaptive threshold generation, invalid calibration rejection, and settings normalization |
-| Evaluation harness | Manual label parsing, valid-session scoring, missing sessions, incomplete sessions, and sequence precision/recall |
+| File | Tests | Coverage |
+| --- | --- | --- |
+| `test_squat_logic.py` | 9 | Angle calculation, state transitions, full-depth reps, shallow reps, no-pose reset |
+| `test_bad_rep_export.py` | 13 | `bad_rep_timestamps` structure, chapter metadata format, slow-clip frame count, FFmpeg graceful skip |
+| `test_analytics.py` | 3 | Meaningful-session filtering, latest/previous comparison, video-session compatibility |
+| `test_user_profile.py` | 3 | Adaptive threshold generation, invalid calibration rejection, settings persistence |
+| `test_session_summary.py` | 2 | `summary.json`, `rep_metrics.csv`, report output, valid-session handling |
+| `test_evaluation_export.py` | 2 | Manual label parsing, missing sessions, incomplete session handling |
 
-### Documentation Note
+The automated suite supports regression testing. It does not claim to measure MediaPipe model accuracy or real webcam performance.
 
-The automated suite validates application logic and saved-output processing. It
-does not claim to test MediaPipe model accuracy or webcam performance. Live
-camera behaviour, lighting sensitivity, and camera-angle limitations remain part
-of the manual scenario-based evaluation.
+## 10. Known Issues and Limitations
 
-### Evidence To Capture
+| Limitation | Evidence | Mitigation / Report Treatment |
+| --- | --- | --- |
+| Partial lower-body visibility can under-count reps | L08 detected fewer reps than the manual count | Report as a camera/visibility limitation, not a hidden defect |
+| Built-in webcam has lower FPS and image quality | L12 average FPS lower than phone camera source | Camera source selection allows using a better external/phone camera |
+| Low light affects landmark reliability | L09 low-light scenario included | State stable lighting as an operating assumption |
+| 2D angle approximation depends on camera placement | Rotation/orientation scenarios included | Use front or near-front camera setup for best results |
+| This is not a medical diagnosis system | Feedback is rule-based and movement-quality focused | Use coaching/prototype wording only |
 
-- Screenshot of the terminal command `.\venv\Scripts\python.exe -m pytest`.
-- Screenshot showing the final result, for example `13 passed`.
-- Include the command and result in the Testing and Evaluation section of the
-  final report.
+## 11. Final Evidence Checklist
+
+- `docs/evaluation/manual_labels.csv` updated with final manual labels
+- `exports/evaluation_results.csv` regenerated from the final labels
+- `exports/evaluation_report.html` regenerated from the final labels
+- `exports/analytics_report.html` regenerated after final sessions
+- `GymGuardian_Test_Cases.xlsx` updated with final test coverage
+- Terminal screenshot of automated tests
+- Screenshots of the final application screens
+- Sample session artefacts retained for appendix evidence

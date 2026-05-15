@@ -363,7 +363,7 @@ def build_html_report(
         linear-gradient(135deg, #f8fbf8 0%, var(--bg) 100%);
       color: var(--ink);
     }}
-    main {{ max-width: 1240px; margin: 0 auto; padding: 40px 28px 56px; }}
+    main {{ width: min(1560px, calc(100vw - 32px)); margin: 0 auto; padding: 40px 16px 56px; }}
     header {{ display: flex; justify-content: space-between; gap: 24px; align-items: flex-start; margin-bottom: 26px; }}
     h1 {{ margin: 0 0 8px; font-size: 42px; letter-spacing: -0.04em; }}
     h2 {{ margin: 0 0 16px; font-size: 22px; letter-spacing: -0.02em; }}
@@ -373,10 +373,11 @@ def build_html_report(
     .card {{ background: rgba(255, 255, 255, 0.9); border: 1px solid var(--line); border-radius: 22px; padding: 22px; box-shadow: var(--shadow); }}
     .metric-label {{ color: var(--muted); font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; }}
     .metric-value {{ margin-top: 10px; font-size: 30px; font-weight: 850; letter-spacing: -0.03em; }}
-    .section {{ margin-top: 18px; background: rgba(255, 255, 255, 0.9); border: 1px solid var(--line); border-radius: 24px; padding: 24px; box-shadow: var(--shadow); overflow-x: auto; }}
-    table {{ width: 100%; border-collapse: collapse; }}
-    th, td {{ text-align: left; padding: 12px 10px; border-bottom: 1px solid #d8e4da; font-size: 14px; vertical-align: top; }}
-    th {{ color: var(--muted); background: var(--panel-soft); text-transform: uppercase; letter-spacing: 0.06em; font-size: 12px; white-space: nowrap; }}
+    .section {{ margin-top: 18px; background: rgba(255, 255, 255, 0.9); border: 1px solid var(--line); border-radius: 24px; padding: 24px; box-shadow: var(--shadow); }}
+    table {{ width: 100%; border-collapse: collapse; table-layout: fixed; }}
+    th, td {{ text-align: left; padding: 12px 10px; border-bottom: 1px solid #d8e4da; font-size: 14px; vertical-align: top; overflow-wrap: anywhere; }}
+    th {{ color: var(--muted); background: var(--panel-soft); text-transform: uppercase; letter-spacing: 0.05em; font-size: 12px; line-height: 1.25; }}
+    .results-table th, .results-table td {{ padding: 11px 8px; font-size: 13px; }}
     tr:last-child td {{ border-bottom: 0; }}
     .note {{ margin-top: 20px; padding: 16px 18px; border-left: 5px solid var(--green); background: #edf7ef; border-radius: 14px; }}
     .good {{ color: var(--green); font-weight: 800; }}
@@ -580,7 +581,6 @@ def _results_table(results: list[EvaluationResult]) -> str:
             f"<td>{escape(_format_count_pair(result.manual_rep_count, result.detected_rep_count))}</td>"
             f"<td>{escape(_format_count_pair(result.manual_bad_rep_count, result.detected_bad_rep_count))}</td>"
             f"<td>{escape(_format_percent(result.rep_accuracy_percent))}</td>"
-            f"<td>{escape(_format_signed_float(result.bad_rate_difference, ' pts'))}</td>"
             f"<td>{escape(result.expected_issue or 'N/A')}</td>"
             f"<td>{escape(result.detected_issue or 'none')}</td>"
             f"<td class=\"{issue_class}\">{escape(result.issue_match)}</td>"
@@ -589,10 +589,15 @@ def _results_table(results: list[EvaluationResult]) -> str:
             "</tr>"
         )
     return (
-        "<table>"
+        '<table class="results-table">'
+        "<colgroup>"
+        '<col style="width:4%"><col style="width:12%"><col style="width:11%"><col style="width:9%">'
+        '<col style="width:6%"><col style="width:6%"><col style="width:8%">'
+        '<col style="width:10%"><col style="width:10%"><col style="width:8%"><col style="width:6%"><col style="width:10%">'
+        "</colgroup>"
         "<thead><tr>"
         "<th>Case</th><th>Scenario</th><th>Session</th><th>Status</th>"
-        "<th>Reps M/D</th><th>Bad M/D</th><th>Rep accuracy</th><th>Bad-rate diff</th>"
+        "<th>Reps M/D</th><th>Bad M/D</th><th>Rep accuracy</th>"
         "<th>Expected issue</th><th>Detected issue</th><th>Issue match</th><th>FPS</th><th>Message</th>"
         "</tr></thead><tbody>"
         + "".join(rows)
