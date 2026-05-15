@@ -60,7 +60,7 @@ class CalibrationProfile:
 @dataclass(frozen=True)
 class AppSettings:
     theme: str = "light"
-    hide_incomplete_sessions: bool = False
+    hide_incomplete_sessions: bool = True
     camera_index: int = 0
 
 
@@ -111,7 +111,7 @@ def load_app_settings() -> AppSettings:
             theme = "light"
         return AppSettings(
             theme=theme,
-            hide_incomplete_sessions=bool(data.get("hide_incomplete_sessions", False)),
+            hide_incomplete_sessions=bool(data.get("hide_incomplete_sessions", True)),
             camera_index=_normalize_camera_index(data.get("camera_index", 0)),
         )
     except (OSError, TypeError, ValueError, json.JSONDecodeError):

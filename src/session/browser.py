@@ -22,6 +22,8 @@ class SessionBrowserItem:
     valid_session: bool
     rep_count: Optional[int]
     bad_rep_count: Optional[int]
+    avg_knee_angle: Optional[float] = None
+    avg_fps: Optional[float] = None
 
 
 @dataclass(frozen=True)
@@ -104,6 +106,8 @@ def list_recent_sessions(
         data = _load_summary_data(summary_path)
         rep_count = _safe_int(data.get("rep_count")) if data else None
         bad_rep_count = _safe_int(data.get("bad_rep_count")) if data else None
+        avg_knee_angle = _safe_float(data.get("avg_knee_angle")) if data else None
+        avg_fps = _safe_float(data.get("avg_fps")) if data else None
         valid_session = _derive_valid_session(data, rep_count)
 
         items.append(
@@ -115,6 +119,8 @@ def list_recent_sessions(
                 valid_session=valid_session,
                 rep_count=rep_count,
                 bad_rep_count=bad_rep_count,
+                avg_knee_angle=avg_knee_angle,
+                avg_fps=avg_fps,
             )
         )
 
@@ -306,9 +312,7 @@ def _derive_valid_session(data: Optional[dict], rep_count: Optional[int]) -> boo
 
 
 def _format_session_label(folder_name: str, valid_session: bool) -> str:
-    if valid_session:
-        return folder_name
-    return f"{folder_name} (incomplete)"
+    return folder_name
 
 
 def _safe_int(value) -> Optional[int]:
