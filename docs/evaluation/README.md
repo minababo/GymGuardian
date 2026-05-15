@@ -4,7 +4,7 @@ This folder stores manual labels used by the evaluation harness. The harness com
 
 ## How to label a session
 
-1. Open a saved `session.mp4` from the `sessions/` folder.
+1. Open the saved session video — `session.mp4` for live sessions or `analysed_video.mp4` for offline video analysis sessions.
 2. Count the visible completed squat repetitions manually.
 3. Count how many of those repetitions should be treated as bad reps.
 4. Add one row to `manual_labels.csv`.
