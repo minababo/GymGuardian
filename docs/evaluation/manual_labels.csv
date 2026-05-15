@@ -1,0 +1,21 @@
+case_id,scenario,session_folder,manual_rep_count,manual_bad_rep_count,expected_issue,manual_bad_sequence,lighting,camera_angle,notes
+L01,Front-facing full-depth squats,20260510_124441,10,0,none,0|0|0|0|0|0|0|0|0|0,normal,front,Phone camera via Windows camera source
+L02,Front-facing shallow squats,20260510_124730,5,5,too_shallow,1|1|1|1|1,normal,front,All reps intentionally shallow
+L03,Mixed front-facing: 5 full + 5 shallow,20260510_115144,10,5,too_shallow,0|0|0|1|1|1|0|0|1|1,normal,front,First five full-depth reps followed by five shallow reps
+L04,Slight right turn,20260510_115949,6,0,none,0|0|0|0|0|0,normal,slight-right,Reps counted if landmarks remained visible
+L05,Slight left turn,20260510_120129,6,0,none,0|0|0|0|0|0,normal,slight-left,Reps counted if landmarks remained visible
+L06,Back/away-facing test,20260510_120414,6,0,none,0|0|0|0|0|0,normal,back,Reps counted if usable landmarks remained visible
+L07,Out of frame / no pose,20260510_122828,0,0,none,,normal,out-of-frame,No reps expected; verifies no crash and no meaningful workout output
+L08,Partial lower-body visibility,20260510_123309,5,0,none,0|0|0|0|0,normal,partial,Body not fully visible; system showed repeated no_pose and unreliable landmark tracking
+L09,Low-light test,20260510_123954,5,2,too_shallow,0|0|0|1|1,low,front,Low-light condition; count may degrade and limitation noted
+L10,Calibrated full-depth squats,20260510_114002,10,0,none,0|0|0|0|0|0|0|0|0|0,normal,front,Calibration enabled; correct reps with lower bad rate
+L11,Calibrated shallow squats,20260510_114925,5,5,too_shallow,1|1|1|1|1,normal,front,Calibration enabled; shallow reps still detected as bad
+L12,Built-in webcam source,20260510_124925,5,0,none,0|0|0|0|0,normal,front,Built-in webcam lower FPS and lower image quality
+L13,Start and exit immediately,,,,,,N/A,N/A,No session folder was created; invalid quick-exit run ignored by evaluation
+L14,Long session,20260513_233625,20,8,too_shallow,0|0|0|1|1|0|0|0|1|1|0|0|0|1|1|0|0|0|1|1,normal,front/slight-right/slight-left,Longer session completed with no crash; summary and video saved
+V01,Own front-facing full-depth video,video_20260510_135538,10,0,none,0|0|0|0|0|0|0|0|0|0,normal,front,Offline local video analysis using own full-depth squat video
+V02,Own shallow video,video_20260510_135801,5,5,too_shallow,1|1|1|1|1,normal,front,Offline local video analysis using own shallow squat video
+V03,Own mixed full + shallow video,video_20260510_140033,10,5,too_shallow,0|0|0|1|1|1|0|0|1|1,normal,front,Offline local video analysis using own mixed squat video
+V04,Friend/user A normal squats,video_20260513_225054,10,0,none,0|0|0|0|0|0|0|0|0|0,normal,front,Offline local video analysis using friend/user A normal squat video
+V05,Friend/user A shallow/mixed squats,video_20260513_225240,10,5,too_shallow,0|0|0|0|0|1|1|1|1|1,normal,front,Offline local video analysis using friend/user A shallow or mixed squat video
+V06,Friend/user B normal squats,video_20260513_225406,10,0,none,0|0|0|0|0|0|0|0|0|0,normal,front,Offline local video analysis using friend/user B normal squat video
