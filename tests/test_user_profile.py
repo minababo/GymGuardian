@@ -35,6 +35,9 @@ def test_app_settings_persist_and_normalize_values(tmp_path, monkeypatch) -> Non
     monkeypatch.setattr(user_profile, "PROFILE_DIR", tmp_path)
     monkeypatch.setattr(user_profile, "SETTINGS_FILE", tmp_path / "settings.json")
 
+    defaults = load_app_settings()
+    assert defaults.hide_incomplete_sessions is True
+
     saved = save_app_settings(
         AppSettings(theme="neon", hide_incomplete_sessions=True, camera_index=99)
     )
