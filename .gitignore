@@ -9,6 +9,11 @@ __pycache__/
 venv/
 env/
 
+# Local executable builds
+build/
+dist/
+*.spec
+
 # IDE / Editor
 .vscode/
 .idea/
@@ -19,6 +24,13 @@ Thumbs.db
 
 # Jupyter
 .ipynb_checkpoints/
+
+# Local report extraction/cache artefacts
+docs/_extracted/
+docs/__pycache__/
+
+# Local coursework evidence workbooks generated outside the app
+GymGuardian_Test_Cases.xlsx
 
 # Models & data (can be large)
 models/*.h5
